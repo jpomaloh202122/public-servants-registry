@@ -1,0 +1,49 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Dedicated SevisPass staging machine identity, separate from registry staff.
+Parameters:
+  DomainPrefix:
+    Type: String
+    AllowedPattern: '[a-z0-9-]+'
+Resources:
+  ServicePool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: ps-id-sevispass-staging-service
+      AdminCreateUserConfig:
+        AllowAdminCreateUserOnly: true
+  ServiceDomain:
+    Type: AWS::Cognito::UserPoolDomain
+    Properties:
+      Domain: !Ref DomainPrefix
+      UserPoolId: !Ref ServicePool
+  RegistryScope:
+    Type: AWS::Cognito::UserPoolResourceServer
+    Properties:
+      UserPoolId: !Ref ServicePool
+      Identifier: registry
+      Name: Staging registry
+      Scopes:
+        - ScopeName: pspass.eligibility.read
+          ScopeDescription: Read one synthetic employee eligibility decision
+  SevisPassClient:
+    Type: AWS::Cognito::UserPoolClient
+    DependsOn: RegistryScope
+    Properties:
+      UserPoolId: !Ref ServicePool
+      ClientName: sevispass-staging-service
+      GenerateSecret: true
+      AllowedOAuthFlowsUserPoolClient: true
+      AllowedOAuthFlows: [client_credentials]
+      AllowedOAuthScopes: [registry/pspass.eligibility.read]
+      AccessTokenValidity: 10
+      TokenValidityUnits:
+        AccessToken: minutes
+Outputs:
+  ServicePoolId:
+    Value: !Ref ServicePool
+  ServiceIssuer:
+    Value: !Sub 'https://cognito-idp.${AWS::Region}.amazonaws.com/${ServicePool}'
+  ServiceClientId:
+    Value: !Ref SevisPassClient
+  TokenEndpoint:
+    Value: !Sub 'https://${DomainPrefix}.auth.${AWS::Region}.amazoncognito.com/oauth2/token'

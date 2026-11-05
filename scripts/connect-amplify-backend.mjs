@@ -41,8 +41,19 @@ const outputNames={
 const outputs=Object.fromEntries(Object.entries(outputNames).map(([key,name])=>[key,stackOutputs[name]]));
 const allowed=['APP_URL','COGNITO_DOMAIN','COGNITO_ISSUER','COGNITO_CLIENT_ID','REGISTRY_AWS_REGION','S3_BUCKET','DB_CLUSTER_ARN','DB_SECRET_ARN','DB_NAME'];
 for(const key of [...allowed,'OWNER_SECRET_ARN','COMPUTE_ROLE_ARN'])if(!outputs[key])throw Error('Missing stack output '+key);
+if (stack === 'ps-id-registry-staging') {
+  if (appId === 'd2p2kldeb52a64' || outputs.APP_URL !== 'https://' + branch + '.' + appId + '.amplifyapp.com') {
+    throw Error('Staging stack origin does not match the target staging app.');
+  }
+}
 // Credentials are read by AWS SDK in the child only; no values are printed or stored.
 execFileSync(process.execPath,['scripts/bootstrap-db.mjs'],{stdio:'inherit',env:{...process.env,...Object.fromEntries([...allowed,'OWNER_SECRET_ARN'].map(k=>[k,outputs[k]]))}});
+if (stack === 'ps-id-registry-staging') {
+  execFileSync(process.execPath, ['scripts/seed-sevispass-staging.mjs'], {
+    stdio: 'inherit',
+    env: {...process.env, ...Object.fromEntries(allowed.map(k => [k, outputs[k]]))}
+  });
+}
 const currentBranch=aws(['amplify','get-branch','--app-id',appId,'--branch-name',branch]).branch;
 const existing=currentBranch.environmentVariables||{};
 const config=Object.fromEntries(allowed.map(k=>[k,outputs[k]]));
