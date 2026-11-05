@@ -32,5 +32,23 @@ try{
  assert.equal(overview.summary.active,150011);
  assert.equal(overview.data.employees.length,6);
  assert.equal(overview.summary.qualityPending,true);
+ const route=readFileSync('app/api/payroll-changes/route.ts','utf8')
+ .replace("'../../chatgpt-auth'","'./auth.mjs'")
+ .replace("'../../server-registry'","'./server-registry.mjs'")
+ .replace("'@/lib/aws-runtime'","'./runtime.mjs'");
+ writeFileSync(join(dir,'changes.mjs'),ts.transpileModule(route,{compilerOptions:{module:ts.ModuleKind.ESNext}}).outputText);
+ writeFileSync(join(dir,'auth.mjs'),"export const getChatGPTUser=async()=>({userId:'test'});");
+ await db.query('UPDATE registry SET payload=$1 WHERE id=$2',[JSON.stringify({dataset:'next',source:{previousDataset:'test',previousDefaultStatus:'Active',defaultEmploymentStatus:'Active'},events:[]}),'excel-config']);
+ await db.query('INSERT INTO organisations VALUES ($1,$2,$3,$4)',['b','next','reordered',JSON.stringify({code:'001',name:'Synthetic Agency'})]);
+ await db.exec(`INSERT INTO employees (id,dataset,number,agency,status,search,ready,payload)
+ SELECT 'next-'||id,'next',number,'reordered',status,search,ready,
+ CASE WHEN number='1' THEN (payload::jsonb||'{"position":"Manager"}'::jsonb)::text ELSE payload END
+ FROM employees WHERE dataset='test' AND number IN ('0','1')`);
+ const {GET}=await import(pathToFileURL(join(dir,'changes.mjs')));
+ const changes=await (await GET(new Request('https://test/api/payroll-changes'))).json();
+ assert.equal(changes.changes.some(c=>c.number==='0'),false);
+ assert.equal(changes.changes.find(c=>c.number==='1').current_position,'Manager');
+ assert.equal(changes.changes.find(c=>c.number==='2').current_status,null);
+ assert.ok(changes.next);
  await db.close();console.log('PostgreSQL engine: migrations, valid/invalid/leap/boundary DOBs, status defaults, quality flags, JSON access, parameter handling and aliases passed.');
 }finally{rmSync(dir,{recursive:true,force:true});}
