@@ -8,7 +8,7 @@ if [ "$registry_account" != '440660366630' ]; then
   echo 'Expected SevisPNGSandbox account 440660366630; stopped before creating resources.' >&2
   exit 1
 fi
-registry_engine=$(aws rds describe-db-engine-versions --engine aurora-postgresql --query 'DBEngineVersions[].EngineVersion' --output json | python3 -c 'import json,sys; v=[x for x in json.load(sys.stdin) if x.startswith("16.")]; print(sorted(v,key=lambda x:tuple(map(int,x.split("."))))[-1] if v else "")')
+registry_engine=$(aws rds describe-db-engine-versions --engine aurora-postgresql --query 'DBEngineVersions[].EngineVersion' --output json | python3 -c 'import json,re,sys; v=[x for x in json.load(sys.stdin) if re.fullmatch(r"16\.[0-9]+(?:\.[0-9]+)*",x)]; print(sorted(v,key=lambda x:tuple(map(int,x.split("."))))[-1] if v else "")')
 if [ -z "$registry_engine" ]; then echo 'No Aurora PostgreSQL 16 engine found in this region.' >&2; exit 1; fi
 printf 'Deploying Cognito, private S3 and billable Aurora Serverless v2 (0.5–2 ACUs) in %s.\n' "$AWS_REGION"
 aws cloudformation deploy --stack-name ps-id-registry-backend \
