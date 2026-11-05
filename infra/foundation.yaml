@@ -1,0 +1,131 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Registry data foundation - no public database or live integration
+Parameters:
+  Environment:
+    Type: String
+    AllowedValues: [dev, test, prod]
+    Default: dev
+  VpcCidr:
+    Type: String
+    Default: 10.42.0.0/16
+Resources:
+  Vpc:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref VpcCidr
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+  DataSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      CidrBlock: !Select [0, !Cidr [!Ref VpcCidr, 4, 8]]
+      AvailabilityZone: !Select [0, !GetAZs '']
+  DataSubnetB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      CidrBlock: !Select [1, !Cidr [!Ref VpcCidr, 4, 8]]
+      AvailabilityZone: !Select [1, !GetAZs '']
+  DatabaseSubnets:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: Isolated registry database subnets
+      SubnetIds: [!Ref DataSubnetA, !Ref DataSubnetB]
+  ApplicationSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Attach to registry backend only
+      VpcId: !Ref Vpc
+  DatabaseSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: PostgreSQL access only from application group
+      VpcId: !Ref Vpc
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 5432
+          ToPort: 5432
+          SourceSecurityGroupId: !Ref ApplicationSecurityGroup
+  Database:
+    Type: AWS::RDS::DBInstance
+    DeletionPolicy: Snapshot
+    UpdateReplacePolicy: Snapshot
+    Properties:
+      Engine: postgres
+      DBInstanceClass: db.t4g.micro
+      AllocatedStorage: 20
+      MaxAllocatedStorage: 100
+      StorageType: gp3
+      StorageEncrypted: true
+      PubliclyAccessible: false
+      DBName: registry
+      MasterUsername: registry_admin
+      ManageMasterUserPassword: true
+      DBSubnetGroupName: !Ref DatabaseSubnets
+      VPCSecurityGroups: [!Ref DatabaseSecurityGroup]
+      BackupRetentionPeriod: 7
+      DeletionProtection: true
+      AutoMinorVersionUpgrade: true
+      CopyTagsToSnapshot: true
+      MultiAZ: !If [IsProduction, true, false]
+  SourceBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      VersioningConfiguration: {Status: Enabled}
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault: {SSEAlgorithm: AES256}
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+  SourceBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref SourceBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Deny
+            Principal: '*'
+            Action: s3:*
+            Resource: [!GetAtt SourceBucket.Arn, !Sub '${SourceBucket.Arn}/*']
+            Condition: {Bool: {aws:SecureTransport: false}}
+  UserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: !Sub registry-${Environment}
+      AdminCreateUserConfig: {AllowAdminCreateUserOnly: true}
+      UsernameAttributes: [email]
+      AutoVerifiedAttributes: [email]
+      MfaConfiguration: 'ON'
+      EnabledMfas: [SOFTWARE_TOKEN_MFA]
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 14
+          RequireLowercase: true
+          RequireUppercase: true
+          RequireNumbers: true
+          RequireSymbols: true
+  AdminGroup:
+    Type: AWS::Cognito::UserPoolGroup
+    Properties: {UserPoolId: !Ref UserPool, GroupName: Administrators}
+  ReviewerGroup:
+    Type: AWS::Cognito::UserPoolGroup
+    Properties: {UserPoolId: !Ref UserPool, GroupName: Reviewers}
+  OfficerGroup:
+    Type: AWS::Cognito::UserPoolGroup
+    Properties: {UserPoolId: !Ref UserPool, GroupName: Officers}
+Conditions:
+  IsProduction: !Equals [!Ref Environment, prod]
+Outputs:
+  VpcId: {Value: !Ref Vpc}
+  DatabaseEndpoint: {Value: !GetAtt Database.Endpoint.Address}
+  DatabaseSecretArn: {Value: !GetAtt Database.MasterUserSecret.SecretArn}
+  SourceBucketName: {Value: !Ref SourceBucket}
+  UserPoolId: {Value: !Ref UserPool}
+  ApplicationSecurityGroupId: {Value: !Ref ApplicationSecurityGroup}

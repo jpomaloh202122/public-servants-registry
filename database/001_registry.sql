@@ -1,0 +1,15 @@
+BEGIN;
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+CREATE TABLE agencies (code varchar(3) PRIMARY KEY CHECK (code ~ '^[0-9]{3}$'), name text NOT NULL, active boolean NOT NULL DEFAULT true);
+CREATE TABLE import_batches (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), source_key text NOT NULL, source_sha256 char(64) NOT NULL, uploaded_by text NOT NULL, uploaded_at timestamptz NOT NULL DEFAULT now(), status text NOT NULL CHECK(status IN ('staged','validated','approved','rejected')), UNIQUE(source_sha256));
+CREATE TABLE servants (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), payroll_number text NOT NULL UNIQUE, full_name text NOT NULL, agency_code varchar(3) NOT NULL REFERENCES agencies(code), date_of_birth date NOT NULL, payroll_active boolean NOT NULL DEFAULT true, photo_verified_at timestamptz, identity_verified_at timestamptz, approved_at timestamptz, approved_by text, version integer NOT NULL DEFAULT 1, updated_at timestamptz NOT NULL DEFAULT now());
+CREATE TABLE source_records (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), batch_id uuid NOT NULL REFERENCES import_batches(id), row_number integer NOT NULL, raw_record jsonb NOT NULL, servant_id uuid REFERENCES servants(id), UNIQUE(batch_id,row_number));
+CREATE TABLE quality_issues (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), servant_id uuid REFERENCES servants(id), source_record_id uuid REFERENCES source_records(id), rule_code text NOT NULL, status text NOT NULL CHECK(status IN ('open','submitted','vetted','approved','resolved','rejected')), opened_at timestamptz NOT NULL DEFAULT now(), resolved_at timestamptz, CHECK(servant_id IS NOT NULL OR source_record_id IS NOT NULL));
+CREATE TABLE corrections (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), issue_id uuid NOT NULL REFERENCES quality_issues(id), proposed_by text NOT NULL, proposed_at timestamptz NOT NULL DEFAULT now(), before_value jsonb NOT NULL, proposed_value jsonb NOT NULL, reviewed_by text, reviewed_at timestamptz, decision text CHECK(decision IN ('approved','rejected')), CHECK(reviewed_by IS NULL OR reviewed_by <> proposed_by));
+CREATE TABLE audit_events (id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY, actor text NOT NULL, action text NOT NULL, entity_type text NOT NULL, entity_id text NOT NULL, occurred_at timestamptz NOT NULL DEFAULT now(), metadata jsonb NOT NULL DEFAULT '{}');
+CREATE FUNCTION reject_audit_change() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'Audit events are append-only'; END $$;
+CREATE TRIGGER audit_immutable BEFORE UPDATE OR DELETE OR TRUNCATE ON audit_events FOR EACH STATEMENT EXECUTE FUNCTION reject_audit_change();
+CREATE TABLE integration_outbox (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), servant_id uuid NOT NULL REFERENCES servants(id), servant_version integer NOT NULL, status text NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','sent','acknowledged','failed')), idempotency_key uuid NOT NULL DEFAULT gen_random_uuid() UNIQUE, created_at timestamptz NOT NULL DEFAULT now(), UNIQUE(servant_id,servant_version));
+CREATE INDEX issues_by_status ON quality_issues(status,servant_id);
+CREATE INDEX servants_by_agency ON servants(agency_code);
+COMMIT;
