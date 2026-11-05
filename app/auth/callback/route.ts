@@ -12,5 +12,12 @@ export async function GET(req:Request){
  if(!response.ok)return new Response('Sign-in failed. Start again.',{status:401});
  try{const tokens=await response.json();await verifyRegistryToken(tokens.id_token,{issuer,clientId:client,nonce:flow.nonce});const p=decodeJwt(tokens.id_token);
  jar.set('__Host-registry-session',tokens.id_token,{httpOnly:true,secure:true,sameSite:'lax',path:'/',maxAge:Math.max(0,Math.min(3600,(p.exp||0)-Math.floor(Date.now()/1000)))});
- return Response.redirect(base+'/');}catch{return new Response('Invalid identity token',{status:401});}
+ return Response.redirect(base+'/'); }catch(error){
+  const reason=error instanceof Error?error.message:'';
+  if(reason==='Registry access is not approved.')return new Response('Registry access denied. Check that your Cognito email is verified and your account belongs to RegistryUsers.',{status:403});
+  if(reason==='Invalid sign-in nonce')return new Response('Sign-in session did not match. Start again from /login.',{status:401});
+  const code=typeof error==='object'&&error!==null&&'code' in error?String(error.code):'UNKNOWN';
+  const safeCode=/^ERR_[A-Z0-9_]+$/.test(code)?code:'UNKNOWN';
+  return new Response('Sign-in token verification failed ('+safeCode+').',{status:401});
+ }
 }
