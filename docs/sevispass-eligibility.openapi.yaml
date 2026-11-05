@@ -1,0 +1,64 @@
+openapi: 3.1.0
+info:
+  title: SevisPass Registry Eligibility
+  version: 1.0.0
+paths:
+  /api/v1/sevispass/eligibility:
+    post:
+      operationId: lookupEmployeeEligibility
+      summary: Look up one Employee Number in the active payroll snapshot
+      security:
+        - serviceToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [employeeNumber]
+              properties:
+                employeeNumber:
+                  type: string
+                  minLength: 1
+                  maxLength: 100
+                  examples: ['000123']
+      responses:
+        '200':
+          description: Lookup decision. Issuance approval is outside this version.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [decision, datasetRevision, payrollCycle, requestId]
+                properties:
+                  decision:
+                    enum: [pending_review, ineligible, not_found]
+                  employeeNumber:
+                    type: string
+                    description: Present only when a record exists.
+                  registryReady:
+                    type: boolean
+                    description: Registry quality result, present only when a record exists.
+                  datasetRevision:
+                    type: integer
+                  payrollCycle:
+                    type: [string, 'null']
+                    format: date
+                  requestId:
+                    type: string
+                    format: uuid
+        '400':
+          description: Invalid Employee Number.
+        '401':
+          description: Missing, invalid or expired service token.
+        '403':
+          description: Client or scope is not authorised.
+        '503':
+          description: Integration disabled, active payroll unavailable, or database error.
+components:
+  securitySchemes:
+    serviceToken:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: RS256 service access token with the agreed audience, client ID and registry/pspass.eligibility.read scope.
