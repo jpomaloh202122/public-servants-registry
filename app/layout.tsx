@@ -5,8 +5,8 @@ export const metadata: Metadata = {
   title: "Public Servant Registry | Government Payroll Office",
   description: "Private employee registry and public service reporting.",
   icons: {
-    icon: "/gpo-icon.png",
-    shortcut: "/gpo-icon.png",
+    icon: "/gpo-icon-transparent.png",
+    shortcut: "/gpo-icon-transparent.png",
   },
 };
 
