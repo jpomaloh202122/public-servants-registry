@@ -1,75 +1,85 @@
 # Public Servants Registry — PS ID
 
-Next.js App Router port of the existing Government Payroll Office registry. Preserves the existing UI, employee and organisation search, data quality dashboards, source uploads, photos, CSV/Excel/PDF reporting, database exports, and source snapshot history. No production payroll data is included.
+Next.js Government Payroll Office registry. Preserves the established screens, imports, agency search, photos, quality checks and management reports. No live payroll data is included.
 
-## AWS design
+## Current Amplify backend
 
-- Next.js Node.js 24 container on one EC2 instance, behind Caddy HTTPS.
-- SQLite on encrypted, retained EBS. All users access the same server database.
-- Private versioned S3 for source archives and photographs, accessed through the instance role.
-- Cognito authorisation-code sign-in with PKCE, verified ID tokens, required MFA, administrator-created accounts, and the `RegistryUsers` approval group.
-- Daily AWS Backup snapshots, retained for 30 days. Perform a restore drill before production use.
+- **Login:** Amazon Cognito authorisation-code flow with PKCE, nonce verification, required authenticator-app MFA, verified email and the administrator-assigned `RegistryUsers` group.
+- **Database:** shared Aurora PostgreSQL through the HTTPS RDS Data API. Production never falls back to browser or local SQLite storage.
+- **Photos and source files:** private, encrypted, versioned S3. Photographs are served only after login. Original sources upload directly to S3 using five-minute signed URLs; downloads use one-minute signed URLs. New source archives retain their S3 version ID.
+- **Credentials:** Amplify SSR compute role and Secrets Manager. Runtime uses a restricted database user with table permissions; schema setup uses a separate owner credential. AWS keys and database passwords are not added to Amplify environment variables.
+- **History:** prior source snapshots remain in PostgreSQL and S3. Employee edits and their revision update commit in one transaction, with complete new employee edit events in `audit_events`. The dashboard holds the latest 100 events to keep metadata small.
 
-This initial deployment deliberately runs one application container and one database writer. It is not a highly available payroll platform. Do not scale it horizontally or put the SQLite file on EFS. For high availability, plan a separate migration of the SQLite-specific quality SQL to RDS PostgreSQL. Application roles and agency-specific permissions are not implemented: every approved RegistryUsers member has registry-wide access. SevisPass integration is not yet implemented.
+All approved RegistryUsers members currently have registry-wide read/write access. Agency-specific roles and a user-management screen are a later change. New source snapshots still require reconciliation of previous corrections and photo associations; they are not automatically merged across uploads. Session tokens expire after one hour; users then sign in again.
 
-## Development
+## Deploy the backend in SevisPNGSandbox
+
+The working Amplify app and branch must already exist in Sydney (`ap-southeast-2`). The deployment script requires AWS CLI, Node.js 22+, Python 3 and a checkout of this private GitHub repository. Use authenticated GitHub access or upload the source archive through CloudShell; never paste access tokens into chat.
+
+**This creates billable Aurora Serverless v2 resources, configured at 0.5–2 ACUs, plus S3 and Cognito.** It creates a separate backend stack, with no EC2 instance or NAT gateway. The database is in isolated subnets with no inbound database port. Seven days of database backups and deletion protection are enabled. Snapshots/source archives require retention and restore testing before production approval.
+
+From the repository root in your authenticated AWS CloudShell session:
+
+```sh
+export AWS_REGION=ap-southeast-2
+export AMPLIFY_APP_ID=dREPLACE
+export APP_URL=https://main.dREPLACE.amplifyapp.com
+export AMPLIFY_BRANCH=main
+npm ci --ignore-scripts
+bash scripts/deploy-amplify-backend.sh
+```
+
+Replace both placeholders with the actual Amplify app ID and exact HTTPS origin; do not include a trailing slash. The script checks account **440660366630**, chooses an available Aurora PostgreSQL 16 version, creates `ps-id-registry-backend`, initializes the schema and restricted runtime user, attaches the backend role to the chosen Amplify branch, preserves existing branch environment variables, and starts a deployment. It does not create or invite users.
+
+CloudFormation creation usually takes several minutes. If a step fails, review that error before rerunning. The database schema and user bootstrap are idempotent; the stack has deletion protection. Do not deploy the old `infra/stack.yaml` EC2 template for this Amplify app.
+
+### If the AWS environment restricts resource creation
+
+The CloudShell identity needs permission to create/update CloudFormation, Cognito, S3, Secrets Manager, IAM roles, VPC/subnets and Aurora, to pass the compute role, read the owner/application secrets during bootstrap, run RDS Data API statements, and update the Amplify app/branch. Ask the account administrator for a deployment role when organisational policies block these operations. Runtime permissions remain restricted to this app's bucket, cluster and application secret.
+
+### Approve the first login
+
+In Cognito, open the pool identified by the backend stack's `USER_POOL_ID` output. Create the authorised user with their email, complete the email verification process, and add that user to **RegistryUsers**. The account must have a verified email and group assignment; signing in alone grants no registry access. Use Cognito's secure invitation/temporary-password flow and authenticator enrolment; do not place passwords in Git or chat.
+
+Test at the exact Amplify URL configured in `APP_URL`. Password reset is handled by Cognito; users can use the hosted sign-in recovery flow. The UI does not store a separate password database.
+
+### Acceptance checks before real records
+
+1. Open `/login`, sign in, enrol MFA, and verify sign-out. An unapproved account must be rejected.
+2. After sign-in, visit `/api/system`. Database should report `connected` and configuration flags should be true.
+3. Import a small synthetic CSV; activate it. Sign in from another browser/device and verify the same records appear.
+4. Upload a synthetic PNG/JPEG photo (up to 3 MB); save the employee and verify it appears on the second device. A new private browser without login must not retrieve `/api/photo?key=...` or registry/source-summary APIs.
+5. Confirm original-source download, PDF/Excel/CSV reports, a conflicting edit, and snapshot history.
+6. Restore a test database backup and inspect S3 version recovery before production acceptance.
+
+Live AWS sign-in, IAM, S3 CORS and database access must be verified after deployment. Local tests do not establish that resources exist or are accessible. Large reports may exceed Amplify response limits; scope reports by agency until asynchronous exports are implemented.
+
+## Development and validation
 
 ```sh
 npm ci
 cp .env.example .env.local
 npm run dev
-```
-
-Configure Cognito and S3 using `.env.example`. Secure cookies require HTTPS for sign-in. No development bypass is provided. Local tests use synthetic fixtures and do not require AWS credentials.
-
-```sh
 npm run typecheck
+npm run test:photos
+npm run test:identity
+npm run test:postgres
+npm run test:data-api
 npm run test:quality
 npm run test:imports
 npm run test:reports
+npm run test:runtime
 npm run build
 ```
 
-## First AWS deployment
+Use the backend stack outputs to configure `.env.local`. Cognito cookies require HTTPS. Tests use synthetic fixtures: PostgreSQL queries execute in PGlite, Data API transport is mocked, and the legacy SQLite adapter runs only when explicitly selected for development/testing. There is no authentication bypass.
 
-Prerequisites: AWS CLI authenticated to your account, Docker, an existing VPC and public subnet, and a DNS name you control. Default region suggestion: Sydney (`ap-southeast-2`); confirm your approved hosting region. Running the stack incurs AWS charges.
+`amplify.yml` sets up a Next.js SSR build with `.next` artifacts. `scripts/amplify-env.mjs` forwards an explicit allowlist of public configuration and resource references into the SSR runtime, excluding credentials. The GitHub workflow validates the source; the connected Amplify branch deploys app commits. Infrastructure deployment is a separate explicit operation.
 
-1. Create an ECR repository and build the image from the checked-out commit:
+## Reference
 
-```sh
-export AWS_REGION=ap-southeast-2
-export AWS_ACCOUNT_ID="$(aws sts get-caller-identity --query Account --output text)"
-export IMAGE_TAG="$(git rev-parse HEAD)"
-export ECR_URI="$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/ps-id-registry"
-aws ecr create-repository --repository-name ps-id-registry --image-tag-mutability IMMUTABLE --image-scanning-configuration scanOnPush=true
-aws ecr get-login-password | docker login --username AWS --password-stdin "$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com"
-docker build --platform linux/amd64 -t "$ECR_URI:$IMAGE_TAG" .
-docker push "$ECR_URI:$IMAGE_TAG"
-```
+- [Amplify SSR compute roles](https://docs.aws.amazon.com/amplify/latest/userguide/amplify-SSR-compute-role.html)
+- [Amplify SSR environment configuration](https://docs.aws.amazon.com/amplify/latest/userguide/ssr-environment-variables.html)
+- [RDS Data API](https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/data-api.html)
 
-2. Deploy the infrastructure, replacing the placeholders with your actual values:
-
-```sh
-aws cloudformation deploy --stack-name ps-id-registry --template-file infra/stack.yaml \
-  --capabilities CAPABILITY_IAM \
-  --parameter-overrides VpcId=vpc-REPLACE SubnetId=subnet-REPLACE \
-  ImageUri="$ECR_URI:$IMAGE_TAG" DomainName=registry.example.gov.pg \
-  CognitoPrefix=REPLACE-WITH-UNIQUE-PREFIX
-aws cloudformation describe-stacks --stack-name ps-id-registry --query 'Stacks[0].Outputs'
-```
-
-3. Set the domain's DNS A record to the `DNSAddress` output. Caddy obtains its HTTPS certificate once DNS resolves. Check `/api/health` over HTTPS. Review bootstrap logs through Systems Manager if provisioning fails; CloudFormation instance creation alone does not certify app readiness.
-
-4. Create each approved user in Cognito, complete email verification, and add them to the `RegistryUsers` group. Cognito requires authenticator-app MFA. Verify sign-in, sign-out, unauthorised API rejection, and one synthetic import/photo/report workflow before uploading real data.
-
-5. Review the backups, restore process, security controls, user permissions and capacity against GPO operational requirements before production acceptance. The app retains previous source snapshots; it does not automatically merge record corrections or photo associations into a new snapshot. Review and reconcile these when replacing a source.
-
-## Updating the running application
-
-Build and push a new immutable image tag. Use Systems Manager Session Manager to update the container on the host: authenticate Docker to ECR, pull the new image, stop/remove the `registry` container, then recreate it using the same `/opt/registry/env`, localhost port mapping and `/opt/registry/data:/data` volume. Take an on-demand backup before upgrades. Roll back by recreating the container with the previous image if the schema remains compatible. Changing CloudFormation `ImageUri` alone does not restart an existing instance.
-
-The included GitHub Actions workflow validates source; it does not deploy to AWS. Do not store AWS keys in Git. Add an OIDC deployment role and automated rollout only after the target AWS account and deployment policy are selected.
-
-## Migration notes
-
-The existing ChatGPT-hosted site remains separate and unchanged. Its runtime data and account grants are not copied. Cloudflare D1/R2 bindings are replaced by a server-side SQLite/S3 compatibility adapter. The old perimeter-authenticated service ingestion endpoint is disabled; use the authenticated, validated upload workflow. API calls verify Cognito cookies rather than trusting incoming identity headers.
+SevisPass integration, high availability, capacity/load testing, agency permissions and production hardening remain separate implementation work.

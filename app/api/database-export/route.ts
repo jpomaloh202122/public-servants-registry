@@ -10,7 +10,7 @@ export async function GET(req:Request){
  if(engine!=='mysql'&&engine!=='oracle')return new Response('Select MySQL or Oracle',{status:400});
  const d:Engine=engine,c=await config(),schemaOnly=u.searchParams.get('content')==='schema';
  if(!c.dataset)return new Response('Source records are not ready',{status:409});
- const filtered=u.searchParams.get('scope')==='filtered',asOf=pngToday();const {where,args}=qualityWhere(filtered?u:new URL(req.url.split('?')[0]));const cte=assessmentCTE(c.source,asOf);
+ const filtered=u.searchParams.get('scope')==='filtered',asOf=pngToday();const {where,args}=qualityWhere(filtered?u:new URL(req.url.split('?')[0]));const cte=assessmentCTE(c.source,asOf,env.DB.dialect);
  const scope=JSON.stringify(filtered?{scope:'filtered',agency:u.searchParams.get('agency')||'all',status:u.searchParams.get('status')||'all',query:u.searchParams.get('query')||'',readiness:u.searchParams.get('readiness')||'all'}:{scope:'all'});
  const count=await env.DB!.prepare(cte+`SELECT COUNT(*) AS n FROM assessed WHERE ${where}`).bind(c.dataset,...args).first<{n:number}>();
  const orgs=await env.DB!.prepare('SELECT payload FROM organisations WHERE dataset=? ORDER BY key').bind(c.dataset).all<{payload:string}>();
@@ -21,7 +21,7 @@ export async function GET(req:Request){
  s+=d==='oracle'?'SET DEFINE OFF\nSET SQLBLANKLINES ON\nWHENEVER OSERROR EXIT FAILURE ROLLBACK\nWHENEVER SQLERROR EXIT SQL.SQLCODE ROLLBACK\n':"SET NAMES utf8mb4;\nSET time_zone = '+00:00';\n";s+=schema(d);
  if(!schemaOnly){s+=d==='mysql'?'START TRANSACTION;\n':'';s+=sourceInsert(c,count!.n,scope,now,d);for(const r of orgs.results)s+=organisationInsert(JSON.parse(r.payload),c.dataset,d);}
  ctrl.enqueue(enc.encode(s));if(schemaOnly){ctrl.enqueue(enc.encode('-- EXPORT COMPLETE: SCHEMA ONLY\n'));ctrl.close();}return;}
- const rows=await env.DB!.prepare(cte+`SELECT number,payload FROM assessed WHERE ${where} AND number>? ORDER BY number LIMIT 500`).bind(c.dataset,...args,cursor).all<{number:string,payload:string}>();
+ const rows=await env.DB!.prepare(cte+`SELECT number,payload FROM assessed WHERE ${where} AND number>? ORDER BY number LIMIT 50`).bind(c.dataset,...args,cursor).all<{number:string,payload:string}>();
  if(!rows.results.length){if(written!==count!.n)throw Error('Export count changed; retry.');const latest=await config();if(latest.revision!==c.revision||latest.dataset!==c.dataset)throw Error('Registry changed; retry.');ctrl.enqueue(enc.encode(`COMMIT;\nSELECT COUNT(*) AS actual_employees FROM sp_employee;\nSELECT exported_employees AS expected_employees FROM sp_source;\nSELECT employee_number,COUNT(*) FROM sp_employee GROUP BY employee_number HAVING COUNT(*)>1;\nSELECT COUNT(*) AS orphan_organisations FROM sp_employee e LEFT JOIN sp_organisation o ON o.organisation_id=e.organisation_id WHERE o.organisation_id IS NULL;\n-- EXPORT COMPLETE: ${written} employees\n`));ctrl.close();return;}
  let out='';for(const r of rows.results)out+=employeeInsert(effectiveEmployee(JSON.parse(r.payload),c.source),c.dataset,d);written+=rows.results.length;cursor=rows.results.at(-1)!.number;ctrl.enqueue(enc.encode(out));
  }catch(e){ctrl.error(e);}}});

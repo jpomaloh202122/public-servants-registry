@@ -1,0 +1,188 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: PS ID Amplify backend - Cognito MFA, private versioned S3, private Aurora PostgreSQL Data API
+Parameters:
+  AppOrigin:
+    Type: String
+    Description: Exact Amplify HTTPS origin with no trailing slash
+    AllowedPattern: 'https://[A-Za-z0-9.-]+'
+  AmplifyAppId:
+    Type: String
+    AllowedPattern: '[a-z0-9]+'
+  CognitoPrefix:
+    Type: String
+    AllowedPattern: '[a-z0-9-]+'
+  DatabaseEngineVersion:
+    Type: String
+    Description: Available Aurora PostgreSQL 16 engine version supporting Serverless v2 and Data API in this region
+Resources:
+  Archives:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      VersioningConfiguration: {Status: Enabled}
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault: {SSEAlgorithm: AES256}
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      CorsConfiguration:
+        CorsRules:
+          - AllowedOrigins: [!Ref AppOrigin]
+            AllowedMethods: [PUT]
+            AllowedHeaders: ['*']
+            ExposedHeaders: [ETag]
+            MaxAge: 300
+  ArchivePolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref Archives
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Deny
+            Principal: '*'
+            Action: s3:*
+            Resource: [!GetAtt Archives.Arn, !Sub '${Archives.Arn}/*']
+            Condition: {Bool: {'aws:SecureTransport': false}}
+  Pool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      AdminCreateUserConfig: {AllowAdminCreateUserOnly: true}
+      UsernameAttributes: [email]
+      UsernameConfiguration: {CaseSensitive: false}
+      AutoVerifiedAttributes: [email]
+      MfaConfiguration: 'ON'
+      EnabledMfas: [SOFTWARE_TOKEN_MFA]
+      AccountRecoverySetting:
+        RecoveryMechanisms: [{Name: verified_email, Priority: 1}]
+      Policies:
+        PasswordPolicy: {MinimumLength: 14, RequireLowercase: true, RequireUppercase: true, RequireNumbers: true, RequireSymbols: true}
+  Users:
+    Type: AWS::Cognito::UserPoolGroup
+    Properties: {GroupName: RegistryUsers, UserPoolId: !Ref Pool}
+  Client:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      UserPoolId: !Ref Pool
+      GenerateSecret: false
+      AllowedOAuthFlowsUserPoolClient: true
+      AllowedOAuthFlows: [code]
+      AllowedOAuthScopes: [openid, email, profile]
+      SupportedIdentityProviders: [COGNITO]
+      CallbackURLs: [!Sub '${AppOrigin}/auth/callback']
+      LogoutURLs: [!Sub '${AppOrigin}/login']
+      PreventUserExistenceErrors: ENABLED
+      EnableTokenRevocation: true
+      IdTokenValidity: 1
+      TokenValidityUnits: {IdToken: hours}
+  Domain:
+    Type: AWS::Cognito::UserPoolDomain
+    Properties: {Domain: !Ref CognitoPrefix, UserPoolId: !Ref Pool}
+  Vpc:
+    Type: AWS::EC2::VPC
+    Properties: {CidrBlock: 10.84.0.0/16, EnableDnsSupport: true, EnableDnsHostnames: true}
+  SubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      CidrBlock: 10.84.1.0/24
+      AvailabilityZone: !Select [0, !GetAZs '']
+  SubnetB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      CidrBlock: 10.84.2.0/24
+      AvailabilityZone: !Select [1, !GetAZs '']
+  DatabaseSubnets:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: Isolated registry database subnets
+      SubnetIds: [!Ref SubnetA, !Ref SubnetB]
+  DatabaseSecurity:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: No inbound database network access - Data API only
+      VpcId: !Ref Vpc
+      SecurityGroupIngress: []
+  Cluster:
+    Type: AWS::RDS::DBCluster
+    DeletionPolicy: Snapshot
+    UpdateReplacePolicy: Snapshot
+    Properties:
+      Engine: aurora-postgresql
+      EngineVersion: !Ref DatabaseEngineVersion
+      DatabaseName: registry
+      MasterUsername: registry_owner
+      ManageMasterUserPassword: true
+      StorageEncrypted: true
+      BackupRetentionPeriod: 7
+      DeletionProtection: true
+      EnableHttpEndpoint: true
+      DBSubnetGroupName: !Ref DatabaseSubnets
+      VpcSecurityGroupIds: [!Ref DatabaseSecurity]
+      ServerlessV2ScalingConfiguration: {MinCapacity: 0.5, MaxCapacity: 2}
+  Writer:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      DBClusterIdentifier: !Ref Cluster
+      Engine: aurora-postgresql
+      DBInstanceClass: db.serverless
+      PubliclyAccessible: false
+      PromotionTier: 0
+  ApplicationSecret:
+    Type: AWS::SecretsManager::Secret
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      Description: PS ID runtime database credentials; bootstrap creates this restricted PostgreSQL user
+      GenerateSecretString:
+        SecretStringTemplate: '{"username":"registry_app"}'
+        GenerateStringKey: password
+        PasswordLength: 40
+        ExcludePunctuation: true
+  ComputeRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: {Service: amplify.amazonaws.com}
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals: {'aws:SourceAccount': !Ref 'AWS::AccountId'}
+              ArnLike: {'aws:SourceArn': !Sub 'arn:aws:amplify:${AWS::Region}:${AWS::AccountId}:apps/${AmplifyAppId}*'}
+      Policies:
+        - PolicyName: RegistryRuntime
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: [s3:GetObject, s3:GetObjectVersion, s3:PutObject]
+                Resource: [!Sub '${Archives.Arn}/portraits/*', !Sub '${Archives.Arn}/uploads/*', !Sub '${Archives.Arn}/sources/*']
+              - Effect: Allow
+                Action: s3:ListBucket
+                Resource: !GetAtt Archives.Arn
+              - Effect: Allow
+                Action: [rds-data:ExecuteStatement, rds-data:BatchExecuteStatement, rds-data:BeginTransaction, rds-data:CommitTransaction, rds-data:RollbackTransaction]
+                Resource: !GetAtt Cluster.DBClusterArn
+              - Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource: !Ref ApplicationSecret
+Outputs:
+  S3_BUCKET: {Value: !Ref Archives}
+  COGNITO_DOMAIN: {Value: !Sub 'https://${CognitoPrefix}.auth.${AWS::Region}.amazoncognito.com'}
+  COGNITO_ISSUER: {Value: !Sub 'https://cognito-idp.${AWS::Region}.amazonaws.com/${Pool}'}
+  COGNITO_CLIENT_ID: {Value: !Ref Client}
+  USER_POOL_ID: {Value: !Ref Pool}
+  APP_URL: {Value: !Ref AppOrigin}
+  REGISTRY_AWS_REGION: {Value: !Ref 'AWS::Region'}
+  DB_CLUSTER_ARN: {Value: !GetAtt Cluster.DBClusterArn}
+  DB_SECRET_ARN: {Value: !Ref ApplicationSecret}
+  DB_NAME: {Value: registry}
+  OWNER_SECRET_ARN: {Value: !GetAtt Cluster.MasterUserSecret.SecretArn}
+  COMPUTE_ROLE_ARN: {Value: !GetAtt ComputeRole.Arn}

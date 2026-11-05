@@ -13,6 +13,10 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run typecheck
+      - run: npm run test:photos
+      - run: npm run test:identity
+      - run: npm run test:data-api
+      - run: npm run test:postgres
       - run: npm run test:runtime
       - run: npm run test:quality
       - run: npm run test:imports

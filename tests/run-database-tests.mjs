@@ -5,7 +5,7 @@ import {join} from 'node:path';
 import {pathToFileURL} from 'node:url';
 const dir=mkdtempSync(join(tmpdir(),'registry-db-tests-'));
 try{
- for(const [src,name] of [['app/model.ts','model'],['app/quality.ts','quality'],['app/database-sql.ts','database-sql'],['tests/database-sql.test.ts','test'],['app/api/database-export/route.ts','route'],['tests/database-route.test.ts','route-test']]){
+ for(const [src,name] of [['app/model.ts','model'],['app/quality.ts','quality'],['app/quality-postgres.ts','quality-postgres'],['app/database-sql.ts','database-sql'],['tests/database-sql.test.ts','test'],['app/api/database-export/route.ts','route'],['tests/database-route.test.ts','route-test']]){
  const text=readFileSync(src,'utf8').replaceAll("'./model'","'./model.mjs'").replaceAll("'./quality'","'./quality.mjs'").replaceAll("'../../quality'","'./quality.mjs'").replaceAll("'../app/database-sql'","'./database-sql.mjs'").replaceAll("'../../database-sql'","'./database-sql.mjs'").replaceAll("'../app/api/database-export/route'","'./route.mjs'").replaceAll("'@/lib/aws-runtime'","'./mock.mjs'").replaceAll("'../../chatgpt-auth'","'./mock.mjs'").replaceAll("'../../server-registry'","'./mock.mjs'");
  writeFileSync(join(dir,name+'.mjs'),ts.transpileModule(text,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext}}).outputText);
  }
