@@ -32,6 +32,17 @@ try{
  assert.equal(overview.summary.active,150011);
  assert.equal(overview.data.employees.length,6);
  assert.equal(overview.summary.qualityPending,true);
+ await db.query('UPDATE employees SET search=$1 WHERE dataset=$2 AND number=$3',["jane o'neill_100%!",'test','0']);
+ const searchUrl=new URL('https://test/api/registry');
+ searchUrl.searchParams.set('query',"  O’Neill_100%!  ".replace('’',"'"));
+ const nameSearch=await listing(new Request(searchUrl));
+ assert.equal(Number(nameSearch.summary.total),150011);
+ assert.equal(Number(nameSearch.summary.matched),1);
+ assert.equal(nameSearch.data.employees.length,1);
+ searchUrl.searchParams.set('query','%_');
+ const literalSearch=await listing(new Request(searchUrl));
+ assert.equal(Number(literalSearch.summary.matched),0);
+
  const route=readFileSync('app/api/payroll-changes/route.ts','utf8')
  .replace("'../../chatgpt-auth'","'./auth.mjs'")
  .replace("'../../server-registry'","'./server-registry.mjs'")
