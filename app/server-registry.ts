@@ -5,14 +5,14 @@ export const CONFIG='excel-config';
 export async function config(){const r=await env.DB!.prepare('SELECT revision,payload FROM registry WHERE id=?').bind(CONFIG).first<{revision:number,payload:string}>();return r?{revision:r.revision,...JSON.parse(r.payload)}:{revision:0,dataset:'',source:null,events:[]};}
 export function employeeStatement(dataset:string,e:Employee){return env.DB!.prepare('INSERT INTO employees (id,dataset,number,agency,status,search,ready,payload) VALUES (?,?,?,?,?,?,?,?) ON CONFLICT(dataset,number) DO NOTHING').bind(dataset+':'+e.id,dataset,e.number,e.agency,e.status,`${e.first} ${e.last} ${e.number} ${e.position}`.toLowerCase(),ready(e)?1:0,JSON.stringify(e));}
 export async function qualityGroups(c:any,asOf=pngToday()){
- const key='quality-summary:'+c.dataset;const cached=env.DB.dialect==='postgres'?null:await env.DB!.prepare('SELECT payload FROM registry WHERE id=?').bind(key).first<{payload:string}>();if(cached){const j=JSON.parse(cached.payload);if(j.revision===c.revision&&j.asOf===asOf&&j.version===2)return j.groups;}
+ const key='quality-summary:'+c.dataset;const cached=env.DB.dialect==='postgres'?null:await env.DB!.prepare('SELECT payload FROM registry WHERE id=?').bind(key).first<{payload:string}>();if(cached){const j=JSON.parse(cached.payload);if(j.revision===c.revision&&j.asOf===asOf&&j.version===3)return j.groups;}
  const groups=(await env.DB!.prepare(assessmentCTE(c.source,asOf,env.DB.dialect)+`SELECT agency,status,${aggregateColumns} FROM assessed GROUP BY agency,status`).bind(c.dataset).all<any>()).results;
- if(env.DB.dialect!=='postgres')await env.DB!.prepare('INSERT INTO registry(id,revision,payload) VALUES (?,0,?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload').bind(key,JSON.stringify({version:2,revision:c.revision,asOf,groups})).run();return groups;
+ if(env.DB.dialect!=='postgres')await env.DB!.prepare('INSERT INTO registry(id,revision,payload) VALUES (?,0,?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload').bind(key,JSON.stringify({version:3,revision:c.revision,asOf,groups})).run();return groups;
 }
 export async function listing(req:Request){const c=await config(),u=new URL(req.url),asOf=pngToday();const {where,args}=qualityWhere(u),cte=assessmentCTE(c.source,asOf,env.DB.dialect);const page=Math.max(0,parseInt(u.searchParams.get('page')||'0')||0),limit=Math.min(100,Math.max(1,parseInt(u.searchParams.get('limit')||'10')||10));
  if(u.searchParams.get('basic')==='1'){
-  const statusExpr=c.source?.defaultEmploymentStatus==='Active'
-   ? env.DB.dialect==='postgres'?"CASE WHEN NOT COALESCE((payload::jsonb->>'statusReviewed')::boolean,false) THEN 'Active' ELSE status END":"CASE WHEN COALESCE(json_extract(payload,'$.statusReviewed'),0)=0 THEN 'Active' ELSE status END"
+  const statusExpr=c.source
+   ? env.DB.dialect==='postgres'?"CASE WHEN status='Not provided' AND NOT COALESCE((payload::jsonb->>'statusReviewed')::boolean,false) THEN 'Active' ELSE status END":"CASE WHEN status='Not provided' AND COALESCE(json_extract(payload,'$.statusReviewed'),0)=0 THEN 'Active' ELSE status END"
    : 'status';
   const [rows,orgs,counts]=await Promise.all([
    env.DB.prepare('SELECT payload FROM employees WHERE dataset=? ORDER BY number LIMIT ?').bind(c.dataset,limit).all<{payload:string}>(),

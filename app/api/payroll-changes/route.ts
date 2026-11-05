@@ -13,11 +13,11 @@ export async function GET(req:Request){
  const cursor=new URL(req.url).searchParams.get('after')??'';
  const query=`WITH prior AS (
   SELECT number,agency,dataset,payload::jsonb AS record,
-   CASE WHEN ?='Active' AND NOT COALESCE((payload::jsonb->>'statusReviewed')::boolean,false) THEN 'Active' ELSE status END AS status
+   CASE WHEN status='Not provided' AND NOT COALESCE((payload::jsonb->>'statusReviewed')::boolean,false) THEN 'Active' ELSE status END AS status
   FROM employees WHERE dataset=? AND number>?
  ), fresh AS (
   SELECT number,agency,dataset,payload::jsonb AS record,
-   CASE WHEN ?='Active' AND NOT COALESCE((payload::jsonb->>'statusReviewed')::boolean,false) THEN 'Active' ELSE status END AS status
+   CASE WHEN status='Not provided' AND NOT COALESCE((payload::jsonb->>'statusReviewed')::boolean,false) THEN 'Active' ELSE status END AS status
   FROM employees WHERE dataset=? AND number>?
  )
  SELECT p.number,COALESCE(po.payload::jsonb->>'name',p.agency) AS previous_agency,COALESCE(fo.payload::jsonb->>'name',f.agency) AS current_agency,
@@ -31,6 +31,6 @@ export async function GET(req:Request){
   OR p.record->>'position' IS DISTINCT FROM f.record->>'position'
   OR p.status IS DISTINCT FROM f.status
  ORDER BY p.number LIMIT 51`;
- const {results}=await env.DB.prepare(query).bind(current.source.previousDefaultStatus??'',previous,cursor,current.source.defaultEmploymentStatus??'',current.dataset,cursor).all<{number:string}>();
+ const {results}=await env.DB.prepare(query).bind(previous,cursor,current.dataset,cursor).all<{number:string}>();
  return Response.json({available:true,revision:current.revision,changes:results.slice(0,50),next:results.length>50?results[49].number:null},{headers});
 }

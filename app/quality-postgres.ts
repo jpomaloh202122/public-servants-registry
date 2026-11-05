@@ -1,7 +1,7 @@
 export function postgresAssessmentCTE(source:any,asOf:string){
  const json=(key:string)=>`COALESCE(payload::jsonb->>'${key}','')`;
  const truth=(key:string)=>`COALESCE((payload::jsonb->>'${key}')::boolean,false)`;
- const status=source?.defaultEmploymentStatus==='Active'?`CASE WHEN NOT ${truth('statusReviewed')} THEN 'Active' ELSE status END`:'status';
+ const status=source?`CASE WHEN status='Not provided' AND NOT ${truth('statusReviewed')} THEN 'Active' ELSE status END`:'status';
  return `WITH base AS (SELECT number,agency,search,payload,${status} AS status,${json('dob')} AS dob,${json('photo')} AS photo,${truth('verified')} AS verified FROM employees WHERE dataset=?),
  dated AS MATERIALIZED (SELECT *,registry_valid_dob(dob) AS valid_date FROM base),
  flags AS (SELECT *,CASE WHEN valid_date AND dob<='${asOf}' THEN CAST(substr('${asOf}',1,4) AS INTEGER)-CAST(substr(dob,1,4) AS INTEGER)-CASE WHEN substr('${asOf}',6)<substr(dob,6) THEN 1 ELSE 0 END ELSE NULL END AS age,
