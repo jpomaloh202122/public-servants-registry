@@ -39,7 +39,7 @@ The CloudShell identity needs permission to create/update CloudFormation, Cognit
 
 ### Approve the first login
 
-In Cognito, open the pool identified by the backend stack's `USER_POOL_ID` output. Create the authorised user with their email, complete the email verification process, and add that user to **RegistryUsers**. The account must have a verified email and group assignment; signing in alone grants no registry access. Use Cognito's secure invitation/temporary-password flow and authenticator enrolment; do not place passwords in Git or chat.
+In Cognito, open the pool identified by the backend stack's `UserPoolId` output. Create the authorised user with their email, complete the email verification process, and add that user to **RegistryUsers**. The account must have a verified email and group assignment; signing in alone grants no registry access. Use Cognito's secure invitation/temporary-password flow and authenticator enrolment; do not place passwords in Git or chat.
 
 Test at the exact Amplify URL configured in `APP_URL`. Password reset is handled by Cognito; users can use the hosted sign-in recovery flow. The UI does not store a separate password database.
 

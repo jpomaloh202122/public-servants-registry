@@ -174,15 +174,15 @@ Resources:
                 Action: secretsmanager:GetSecretValue
                 Resource: !Ref ApplicationSecret
 Outputs:
-  S3_BUCKET: {Value: !Ref Archives}
-  COGNITO_DOMAIN: {Value: !Sub 'https://${CognitoPrefix}.auth.${AWS::Region}.amazoncognito.com'}
-  COGNITO_ISSUER: {Value: !Sub 'https://cognito-idp.${AWS::Region}.amazonaws.com/${Pool}'}
-  COGNITO_CLIENT_ID: {Value: !Ref Client}
-  USER_POOL_ID: {Value: !Ref Pool}
-  APP_URL: {Value: !Ref AppOrigin}
-  REGISTRY_AWS_REGION: {Value: !Ref 'AWS::Region'}
-  DB_CLUSTER_ARN: {Value: !GetAtt Cluster.DBClusterArn}
-  DB_SECRET_ARN: {Value: !Ref ApplicationSecret}
-  DB_NAME: {Value: registry}
-  OWNER_SECRET_ARN: {Value: !GetAtt Cluster.MasterUserSecret.SecretArn}
-  COMPUTE_ROLE_ARN: {Value: !GetAtt ComputeRole.Arn}
+  S3Bucket: {Value: !Ref Archives}
+  CognitoDomain: {Value: !Sub 'https://${CognitoPrefix}.auth.${AWS::Region}.amazoncognito.com'}
+  CognitoIssuer: {Value: !Sub 'https://cognito-idp.${AWS::Region}.amazonaws.com/${Pool}'}
+  CognitoClientId: {Value: !Ref Client}
+  UserPoolId: {Value: !Ref Pool}
+  AppUrl: {Value: !Ref AppOrigin}
+  RegistryAwsRegion: {Value: !Ref 'AWS::Region'}
+  DbClusterArn: {Value: !GetAtt Cluster.DBClusterArn}
+  DbSecretArn: {Value: !Ref ApplicationSecret}
+  DbName: {Value: registry}
+  OwnerSecretArn: {Value: !GetAtt Cluster.MasterUserSecret.SecretArn}
+  ComputeRoleArn: {Value: !GetAtt ComputeRole.Arn}
