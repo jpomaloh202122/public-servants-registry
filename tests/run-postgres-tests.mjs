@@ -23,5 +23,14 @@ try{
  await db.query('INSERT INTO organisations VALUES ($1,$2,$3,$4)',['a','test','agency',JSON.stringify({id:'agency',code:'001',name:'Synthetic Agency',type:'Organisation'})]);
  const {listing}=await import(pathToFileURL(join(dir,'server-registry.mjs')));const list=await listing(new Request('https://test/api/registry?query=example&agency=agency'));assert.equal(Number(list.summary.total),10);assert.equal(Number(list.summary.matched),10);
  const {managementData}=await import(pathToFileURL(join(dir,'server-management.mjs')));const management=await managementData(new Request('https://test/api/management-reports'),{displayName:'Test'});assert.equal(management.report.total,10);
+ await db.exec(`INSERT INTO employees (id,dataset,number,agency,status,search,ready,payload)
+ SELECT 'large-'||n,'test','large-'||n,'agency','Active','example',0,
+ (SELECT payload FROM employees WHERE dataset='test' AND number='0' LIMIT 1)
+ FROM generate_series(1,150001) AS n`);
+ const overview=await listing(new Request('https://test/api/registry?basic=1&limit=6'));
+ assert.equal(overview.summary.total,150011);
+ assert.equal(overview.summary.active,150011);
+ assert.equal(overview.data.employees.length,6);
+ assert.equal(overview.summary.qualityPending,true);
  await db.close();console.log('PostgreSQL engine: migrations, valid/invalid/leap/boundary DOBs, status defaults, quality flags, JSON access, parameter handling and aliases passed.');
 }finally{rmSync(dir,{recursive:true,force:true});}

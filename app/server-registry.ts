@@ -10,6 +10,18 @@ export async function qualityGroups(c:any,asOf=pngToday()){
  if(env.DB.dialect!=='postgres')await env.DB!.prepare('INSERT INTO registry(id,revision,payload) VALUES (?,0,?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload').bind(key,JSON.stringify({version:2,revision:c.revision,asOf,groups})).run();return groups;
 }
 export async function listing(req:Request){const c=await config(),u=new URL(req.url),asOf=pngToday();const {where,args}=qualityWhere(u),cte=assessmentCTE(c.source,asOf,env.DB.dialect);const page=Math.max(0,parseInt(u.searchParams.get('page')||'0')||0),limit=Math.min(100,Math.max(1,parseInt(u.searchParams.get('limit')||'10')||10));
+ if(u.searchParams.get('basic')==='1'){
+  const statusExpr=c.source?.defaultEmploymentStatus==='Active'
+   ? env.DB.dialect==='postgres'?"CASE WHEN NOT COALESCE((payload::jsonb->>'statusReviewed')::boolean,false) THEN 'Active' ELSE status END":"CASE WHEN COALESCE(json_extract(payload,'$.statusReviewed'),0)=0 THEN 'Active' ELSE status END"
+   : 'status';
+  const [rows,orgs,counts]=await Promise.all([
+   env.DB.prepare('SELECT payload FROM employees WHERE dataset=? ORDER BY number LIMIT ?').bind(c.dataset,limit).all<{payload:string}>(),
+   env.DB.prepare('SELECT payload FROM organisations WHERE dataset=? ORDER BY key').bind(c.dataset).all<{payload:string}>(),
+   env.DB.prepare(`SELECT COUNT(*) AS total, SUM(CASE WHEN ${statusExpr}='Active' THEN 1 ELSE 0 END) AS active FROM employees WHERE dataset=?`).bind(c.dataset).first<{total:number;active:number}>()
+  ]);
+  const total=Number(counts?.total??0),active=Number(counts?.active??0);
+  return {revision:c.revision,data:{employees:rows.results.map(r=>effectiveEmployee(JSON.parse(r.payload),c.source)),agencies:orgs.results.map(r=>JSON.parse(r.payload)),events:c.events||[],sample:false},summary:{total,active,ready:0,matched:total,matchedActive:active,matchedReady:0,flags:{},groups:[],selected:[],source:c.source,asOf,qualityPending:true}};
+ }
  const [rows,orgs,groups]=await Promise.all([env.DB!.prepare(cte+`SELECT payload FROM assessed WHERE ${where} ORDER BY number LIMIT ? OFFSET ?`).bind(c.dataset,...args,limit,page*limit).all<{payload:string}>(),env.DB!.prepare('SELECT payload FROM organisations WHERE dataset=? ORDER BY key').bind(c.dataset).all<{payload:string}>(),qualityGroups(c,asOf)]);
  const allFlags=Object.fromEntries(flagKeys.map(k=>[k,groups.reduce((n:number,g:any)=>n+(g[k]||0),0)]));let selected:any[]=[];
  if(u.searchParams.get('query')){selected=(await env.DB!.prepare(cte+`SELECT agency,COUNT(*) AS total,SUM(CASE WHEN status='Active' THEN 1 ELSE 0 END) AS active,SUM(ready) AS ready FROM assessed WHERE ${where} GROUP BY agency`).bind(c.dataset,...args).all<any>()).results;}
