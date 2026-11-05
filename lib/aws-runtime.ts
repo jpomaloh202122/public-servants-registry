@@ -4,7 +4,7 @@ import {createRequire} from 'node:module';
 import {execute,dataApiBatch} from './data-api';
 import {mkdirSync,readFileSync,readdirSync} from 'node:fs';
 import {dirname,join} from 'node:path';
-import {S3Client,PutObjectCommand,GetObjectCommand,HeadObjectCommand} from '@aws-sdk/client-s3';
+import {S3Client,ListObjectsV2Command,PutObjectCommand,GetObjectCommand,HeadObjectCommand} from '@aws-sdk/client-s3';
 let database:Database.Database|undefined;
 function driver(){if(process.env.DB_DRIVER==='sqlite'&&process.env.NODE_ENV!=='production')return 'sqlite';return 'postgres';}
 function db(){
@@ -32,6 +32,7 @@ function absent(e:unknown){return (e as any)?.$metadata?.httpStatusCode===404;}
 export const env={
  DB:{get dialect():'sqlite'|'postgres'{return driver();},prepare:(sql:string)=>new Statement(sql),async batch(statements:Statement[]){if(driver()==='postgres')return dataApiBatch(statements);return db().transaction(()=>statements.map(s=>{const r=db().prepare(s.sql).run(...s.args);if(s.expectedChanges!==undefined&&r.changes!==s.expectedChanges)throw Error('Concurrent registry change');return {meta:{changes:r.changes}};}))();}},
  BUCKET:{
+ async check(){await s3.send(new ListObjectsV2Command({Bucket:bucket(),MaxKeys:0}),{abortSignal:AbortSignal.timeout(5000)});},
  async put(key:string,body:any,options?:{httpMetadata?:{contentType?:string}}){
   let bytes=body;if(body instanceof ReadableStream)bytes=new Uint8Array(await new Response(body).arrayBuffer());
   await s3.send(new PutObjectCommand({Bucket:bucket(),Key:key,Body:bytes,ContentType:options?.httpMetadata?.contentType}));
