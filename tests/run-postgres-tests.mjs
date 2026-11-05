@@ -21,7 +21,7 @@ try{
  globalThis.__pgFixture={DB:adapter};writeFileSync(join(dir,'runtime.mjs'),'export const env=globalThis.__pgFixture;');
  await db.query('UPDATE registry SET payload=$1 WHERE id=$2',[JSON.stringify({dataset:'test',source:{source:'synthetic.csv',statusProvided:false},events:[]}), 'excel-config']);
  await db.query('INSERT INTO organisations VALUES ($1,$2,$3,$4)',['a','test','agency',JSON.stringify({id:'agency',code:'001',name:'Synthetic Agency',type:'Organisation'})]);
- const {listing}=await import(pathToFileURL(join(dir,'server-registry.mjs')));const list=await listing(new Request('https://test/api/registry?query=example&agency=agency'));assert.equal(Number(list.summary.total),10);assert.equal(Number(list.summary.matched),10);assert.equal(Number(list.summary.active),10);assert.equal(Number(list.summary.ready),1);assert.equal(Number(list.summary.flags.unverified),9);
+ const {listing}=await import(pathToFileURL(join(dir,'server-registry.mjs')));const list=await listing(new Request('https://test/api/registry?query=example&agency=agency'));assert.equal(Number(list.summary.total),10);assert.equal(Number(list.summary.matched),10);assert.equal(Number(list.summary.active),10);assert.equal(Number(list.summary.ready),1);assert.equal(Number(list.summary.matchedReady),1);assert.equal(list.summary.qualityPending,true);
  const {managementData}=await import(pathToFileURL(join(dir,'server-management.mjs')));const management=await managementData(new Request('https://test/api/management-reports'),{displayName:'Test'});assert.equal(management.report.total,10);
  await db.exec(`INSERT INTO employees (id,dataset,number,agency,status,search,ready,payload)
  SELECT 'large-'||n,'test','large-'||n,'agency','Active','example',0,

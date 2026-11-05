@@ -13,10 +13,10 @@ export async function qualityGroups(c:Awaited<ReturnType<typeof config>>,asOf=pn
  if(env.DB.dialect!=='postgres')await env.DB!.prepare('INSERT INTO registry(id,revision,payload) VALUES (?,0,?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload').bind(key,JSON.stringify({version:3,revision:c.revision,asOf,groups})).run();return groups;
 }
 export async function listing(req:Request){const c=await config(),u=new URL(req.url),asOf=pngToday();const search=employeeSearchPattern(u);const filters=new URL(u);filters.searchParams.delete('query');const {where,args}=qualityWhere(filters),cte=assessmentCTE(c.source,asOf,env.DB.dialect,!!search);const bindings=[c.dataset,...(search?[search]:[]),...args];const page=Math.max(0,parseInt(u.searchParams.get('page')||'0')||0),limit=Math.min(100,Math.max(1,parseInt(u.searchParams.get('limit')||'10')||10));
- if(u.searchParams.get('basic')==='1'){
   const statusExpr=c.source
    ? env.DB.dialect==='postgres'?"CASE WHEN status='Not provided' AND NOT COALESCE((payload::jsonb->>'statusReviewed')::boolean,false) THEN 'Active' ELSE status END":"CASE WHEN status='Not provided' AND COALESCE(json_extract(payload,'$.statusReviewed'),0)=0 THEN 'Active' ELSE status END"
    : 'status';
+ if(u.searchParams.get('basic')==='1'){
   const [rows,orgs,counts]=await Promise.all([
    env.DB.prepare('SELECT payload FROM employees WHERE dataset=? ORDER BY number LIMIT ?').bind(c.dataset,limit).all<{payload:string}>(),
    env.DB.prepare('SELECT payload FROM organisations WHERE dataset=? ORDER BY key').bind(c.dataset).all<{payload:string}>(),
@@ -25,8 +25,18 @@ export async function listing(req:Request){const c=await config(),u=new URL(req.
   const total=Number(counts?.total??0),active=Number(counts?.active??0);
   return {revision:c.revision,data:{employees:rows.results.map(r=>effectiveEmployee(JSON.parse(r.payload),c.source)),agencies:orgs.results.map(r=>JSON.parse(r.payload)),events:c.events||[],sample:false},summary:{total,active,ready:0,matched:total,matchedActive:active,matchedReady:0,flags:{},groups:[],selected:[],source:c.source,asOf,qualityPending:true}};
  }
+ if(search){
+  const [rows,orgs,counts,selected]=await Promise.all([
+   env.DB.prepare(cte+`SELECT payload FROM assessed WHERE ${where} ORDER BY number LIMIT ? OFFSET ?`).bind(...bindings,limit,page*limit).all<{payload:string}>(),
+   env.DB.prepare('SELECT payload FROM organisations WHERE dataset=? ORDER BY key').bind(c.dataset).all<{payload:string}>(),
+   env.DB.prepare(`SELECT COUNT(*) AS total,SUM(CASE WHEN ${statusExpr}='Active' THEN 1 ELSE 0 END) AS active FROM employees WHERE dataset=?`).bind(c.dataset).first<{total:number;active:number}>(),
+   env.DB.prepare(cte+`SELECT agency,COUNT(*) AS total,SUM(CASE WHEN status='Active' THEN 1 ELSE 0 END) AS active,SUM(ready) AS ready FROM assessed WHERE ${where} GROUP BY agency`).bind(...bindings).all<Selection>()
+  ]);
+  const matches=selected.results.map(r=>({...r,total:Number(r.total),active:Number(r.active),ready:Number(r.ready)}));
+  const matched=matches.reduce((n,r)=>n+r.total,0),matchedActive=matches.reduce((n,r)=>n+r.active,0),matchedReady=matches.reduce((n,r)=>n+r.ready,0);
+  return {revision:c.revision,data:{employees:rows.results.map(r=>effectiveEmployee(JSON.parse(r.payload),c.source)),agencies:orgs.results.map(r=>JSON.parse(r.payload)),events:c.events||[],sample:false},summary:{total:Number(counts?.total??0),active:Number(counts?.active??0),ready:matchedReady,flags:{},groups:[],selected:matches,matched,matchedActive,matchedReady,source:c.source,asOf,qualityPending:true}};
+ }
  const [rows,orgs,groups]=await Promise.all([env.DB!.prepare(cte+`SELECT payload FROM assessed WHERE ${where} ORDER BY number LIMIT ? OFFSET ?`).bind(...bindings,limit,page*limit).all<{payload:string}>(),env.DB!.prepare('SELECT payload FROM organisations WHERE dataset=? ORDER BY key').bind(c.dataset).all<{payload:string}>(),qualityGroups(c,asOf)]);
  const allFlags=Object.fromEntries(flagKeys.map(k=>[k,groups.reduce((n,g)=>n+(g[k]||0),0)]));let selected:Selection[]=[];
- if(search){selected=(await env.DB!.prepare(cte+`SELECT agency,COUNT(*) AS total,SUM(CASE WHEN status='Active' THEN 1 ELSE 0 END) AS active,SUM(ready) AS ready FROM assessed WHERE ${where} GROUP BY agency`).bind(...bindings).all<Selection>()).results;}
- else{const a=u.searchParams.get('agency'),s=u.searchParams.get('status'),r=u.searchParams.get('readiness')||'all';const map=new Map<string,Selection>();for(const g of groups){if(a&&a!=='all'&&a!==g.agency||s&&s!=='all'&&s!==g.status)continue;const n=r==='all'||!flagKeys.includes(r as QualityFlag)?g.count:g[r as QualityFlag]||0;const prev=map.get(g.agency)||{agency:g.agency,total:0,active:0,ready:0};prev.total+=n;prev.active+=g.status==='Active'?n:0;prev.ready+=r==='all'||r==='photo_verified'?g.ready||0:r==='ready'?n:0;map.set(g.agency,prev);}selected=[...map.values()];}
- const summary={total:groups.reduce((n,g)=>n+g.count,0),active:groups.filter(x=>x.status==='Active').reduce((n:number,x:any)=>n+x.count,0),ready:allFlags.ready,flags:allFlags,asOf,groups,selected,matched:selected.reduce((n,x)=>n+x.total,0),matchedActive:selected.reduce((n,x)=>n+x.active,0),matchedReady:selected.reduce((n,x)=>n+x.ready,0),source:c.source};return {revision:c.revision,data:{employees:rows.results.map(r=>effectiveEmployee(JSON.parse(r.payload),c.source)),agencies:orgs.results.map(r=>JSON.parse(r.payload)),events:c.events||[],sample:false},summary};}
+ {const a=u.searchParams.get('agency'),s=u.searchParams.get('status'),r=u.searchParams.get('readiness')||'all';const map=new Map<string,Selection>();for(const g of groups){if(a&&a!=='all'&&a!==g.agency||s&&s!=='all'&&s!==g.status)continue;const n=r==='all'||!flagKeys.includes(r as QualityFlag)?g.count:g[r as QualityFlag]||0;const prev=map.get(g.agency)||{agency:g.agency,total:0,active:0,ready:0};prev.total+=n;prev.active+=g.status==='Active'?n:0;prev.ready+=r==='all'||r==='photo_verified'?g.ready||0:r==='ready'?n:0;map.set(g.agency,prev);}selected=[...map.values()];}
+ const summary={total:groups.reduce((n,g)=>n+g.count,0),active:groups.filter(x=>x.status==='Active').reduce((n,x)=>n+x.count,0),ready:allFlags.ready,flags:allFlags,asOf,groups,selected,matched:selected.reduce((n,x)=>n+x.total,0),matchedActive:selected.reduce((n,x)=>n+x.active,0),matchedReady:selected.reduce((n,x)=>n+x.ready,0),source:c.source};return {revision:c.revision,data:{employees:rows.results.map(r=>effectiveEmployee(JSON.parse(r.payload),c.source)),agencies:orgs.results.map(r=>JSON.parse(r.payload)),events:c.events||[],sample:false},summary};}
