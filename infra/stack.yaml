@@ -1,0 +1,187 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: PS ID registry - single AWS host, encrypted EBS database, S3 archives, Cognito MFA, HTTPS
+Parameters:
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+  SubnetId:
+    Type: AWS::EC2::Subnet::Id
+    Description: Public subnet with Internet routing; the host exposes only HTTPS and HTTP redirect.
+  ImageUri:
+    Type: String
+    Description: ECR Docker image URI, with immutable commit SHA tag
+  DomainName:
+    Type: String
+    Description: DNS name to point at the Elastic IP; HTTPS certificates are issued by Caddy
+  CognitoPrefix:
+    Type: String
+    AllowedPattern: '[a-z0-9-]+'
+  AmiId:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64
+Resources:
+  Archives:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      VersioningConfiguration: {Status: Enabled}
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault: {SSEAlgorithm: AES256}
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+  ArchivePolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref Archives
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Deny
+            Principal: '*'
+            Action: s3:*
+            Resource: [!GetAtt Archives.Arn, !Sub '${Archives.Arn}/*']
+            Condition: {Bool: {'aws:SecureTransport': false}}
+  UserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      AdminCreateUserConfig: {AllowAdminCreateUserOnly: true}
+      UsernameAttributes: [email]
+      AutoVerifiedAttributes: [email]
+      MfaConfiguration: 'ON'
+      EnabledMfas: [SOFTWARE_TOKEN_MFA]
+      Policies:
+        PasswordPolicy: {MinimumLength: 14, RequireLowercase: true, RequireUppercase: true, RequireNumbers: true, RequireSymbols: true}
+  Users:
+    Type: AWS::Cognito::UserPoolGroup
+    Properties: {GroupName: RegistryUsers, UserPoolId: !Ref UserPool}
+  Client:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      UserPoolId: !Ref UserPool
+      GenerateSecret: false
+      AllowedOAuthFlowsUserPoolClient: true
+      AllowedOAuthFlows: [code]
+      AllowedOAuthScopes: [openid, email, profile]
+      SupportedIdentityProviders: [COGNITO]
+      CallbackURLs: [!Sub 'https://${DomainName}/auth/callback']
+      LogoutURLs: [!Sub 'https://${DomainName}/login']
+      PreventUserExistenceErrors: ENABLED
+  CognitoDomain:
+    Type: AWS::Cognito::UserPoolDomain
+    Properties: {Domain: !Ref CognitoPrefix, UserPoolId: !Ref UserPool}
+  HostRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement: [{Effect: Allow, Principal: {Service: ec2.amazonaws.com}, Action: 'sts:AssumeRole'}]
+      ManagedPolicyArns: [arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore, arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly]
+      Policies:
+        - PolicyName: RegistryArchives
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: [s3:GetObject, s3:PutObject]
+                Resource: !Sub '${Archives.Arn}/*'
+  Profile:
+    Type: AWS::IAM::InstanceProfile
+    Properties: {Roles: [!Ref HostRole]}
+  SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: HTTPS registry access; application and database ports remain private
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - {IpProtocol: tcp, FromPort: 443, ToPort: 443, CidrIp: 0.0.0.0/0}
+        - {IpProtocol: tcp, FromPort: 80, ToPort: 80, CidrIp: 0.0.0.0/0}
+  Host:
+    Type: AWS::EC2::Instance
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      ImageId: !Ref AmiId
+      InstanceType: t3.medium
+      IamInstanceProfile: !Ref Profile
+      SecurityGroupIds: [!Ref SecurityGroup]
+      SubnetId: !Ref SubnetId
+      MetadataOptions: {HttpTokens: required, HttpPutResponseHopLimit: 2}
+      BlockDeviceMappings:
+        - DeviceName: /dev/xvda
+          Ebs: {VolumeSize: 50, VolumeType: gp3, Encrypted: true, DeleteOnTermination: false}
+      Tags: [{Key: Name, Value: PS-ID-Registry}, {Key: Backup, Value: ps-id-registry}]
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          set -euo pipefail
+          dnf install -y docker
+          systemctl enable --now docker
+          mkdir -p /opt/registry/data /opt/registry/caddy /opt/registry/caddy-config
+          cat > /opt/registry/env <<'ENV'
+          AWS_REGION=${AWS::Region}
+          S3_BUCKET=${Archives}
+          DATABASE_PATH=/data/registry.sqlite
+          APP_URL=https://${DomainName}
+          COGNITO_DOMAIN=https://${CognitoPrefix}.auth.${AWS::Region}.amazoncognito.com
+          COGNITO_ISSUER=https://cognito-idp.${AWS::Region}.amazonaws.com/${UserPool}
+          COGNITO_CLIENT_ID=${Client}
+          ENV
+          cat > /opt/registry/Caddyfile <<'CADDY'
+          ${DomainName} {
+            reverse_proxy 127.0.0.1:3000
+            header Strict-Transport-Security "max-age=31536000"
+            header X-Content-Type-Options "nosniff"
+            request_body {
+              max_size 105MB
+            }
+          }
+          CADDY
+          aws ecr get-login-password --region ${AWS::Region} | docker login --username AWS --password-stdin ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com
+          docker pull ${ImageUri}
+          docker run -d --name registry --restart unless-stopped --env-file /opt/registry/env -p 127.0.0.1:3000:3000 -v /opt/registry/data:/data ${ImageUri}
+          docker run -d --name caddy --restart unless-stopped --network host -v /opt/registry/Caddyfile:/etc/caddy/Caddyfile:ro -v /opt/registry/caddy:/data -v /opt/registry/caddy-config:/config caddy:2
+  Address:
+    Type: AWS::EC2::EIP
+    Properties: {Domain: vpc}
+  AddressAttachment:
+    Type: AWS::EC2::EIPAssociation
+    Properties: {InstanceId: !Ref Host, EIP: !Ref Address}
+  BackupRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement: [{Effect: Allow, Principal: {Service: backup.amazonaws.com}, Action: 'sts:AssumeRole'}]
+      ManagedPolicyArns: [arn:aws:iam::aws:policy/service-role/AWSBackupServiceRolePolicyForBackup]
+  Vault:
+    Type: AWS::Backup::BackupVault
+    DeletionPolicy: Retain
+    Properties: {BackupVaultName: !Sub '${AWS::StackName}-vault'}
+  BackupPlan:
+    Type: AWS::Backup::BackupPlan
+    Properties:
+      BackupPlan:
+        BackupPlanName: !Sub '${AWS::StackName}-daily'
+        BackupPlanRule:
+          - RuleName: Daily
+            TargetBackupVault: !Ref Vault
+            ScheduleExpression: cron(0 14 * * ? *)
+            Lifecycle: {DeleteAfterDays: 30}
+  BackupSelection:
+    Type: AWS::Backup::BackupSelection
+    Properties:
+      BackupPlanId: !Ref BackupPlan
+      BackupSelection:
+        SelectionName: RegistryHost
+        IamRoleArn: !GetAtt BackupRole.Arn
+        Resources: [!Sub 'arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:instance/${Host}']
+Outputs:
+  URL: {Value: !Sub 'https://${DomainName}'}
+  DNSAddress: {Value: !Ref Address}
+  InstanceId: {Value: !Ref Host}
+  UserPoolId: {Value: !Ref UserPool}
+  Bucket: {Value: !Ref Archives}

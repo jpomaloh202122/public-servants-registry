@@ -1,0 +1,24 @@
+import assert from 'node:assert/strict';
+import {DatabaseSync} from 'node:sqlite';
+(globalThis as any).FixedLengthStream=class extends TransformStream {constructor(length:number){let n=0;super({transform(chunk,controller){n+=chunk.byteLength;if(n>length)throw Error('Too many bytes');controller.enqueue(chunk);},flush(){if(n!==length)throw Error('Too few bytes');}});}};
+const db=new DatabaseSync(':memory:');db.exec(`CREATE TABLE registry(id TEXT PRIMARY KEY,revision INTEGER,payload TEXT);CREATE TABLE organisations(id TEXT PRIMARY KEY,dataset TEXT,key TEXT,payload TEXT);CREATE TABLE employees(id TEXT PRIMARY KEY,dataset TEXT,number TEXT,agency TEXT,status TEXT,search TEXT,ready INTEGER,payload TEXT,UNIQUE(dataset,number));`);
+db.prepare('INSERT INTO registry VALUES (?,?,?)').run('excel-config',1,JSON.stringify({dataset:'old',source:{source:'old.xlsx'},events:[]}));
+const objects=new Map<string,Uint8Array>();const dbApi={prepare(sql:string){return {bind(...args:any[]){const q=db.prepare(sql);return {async first(){return q.get(...args)||null;},async all(){return {results:q.all(...args)};},async run(){const r=q.run(...args);return {meta:{changes:Number(r.changes)}};}};}};},async batch(statements:any[]){return Promise.all(statements.map(s=>s.run()));}};
+const ctx={user:{userId:'owner',displayName:'Test'},env:{DB:dbApi,BUCKET:{async put(k:string,body:ReadableStream){objects.set(k,new Uint8Array(await new Response(body).arrayBuffer()));},async head(k:string){return objects.has(k)?{}:null;},async get(k:string){return objects.has(k)?{body:objects.get(k)}:null;}}}};(globalThis as any).__importTest=ctx;
+const {GET,POST,PUT}=await import('../app/api/imports/route');
+const req=(action:string,body:any)=>new Request('http://test/api/imports?action='+action,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+const org={id:'o1',code:'001',name:'Test',type:'Organisation'};
+async function start(expected=1){const res=await POST(req('start',{expected,filename:'test.csv',format:'CSV',organisations:[org],stats:{sourceRows:expected}}));assert.equal(res.status,200);return (await res.json() as any).id;}
+let id=await start();const employee={id:'e1',number:'0001',first:'Jane',last:'Smith',gender:'Female',dob:'1990-01-01',position:'Officer',agency:'o1',status:'Active',sourceUnit:'',sourceRow:2,photo:'forged',verified:true};
+assert.equal((await POST(req('batch',{id,employees:[employee]}))).status,200);assert.equal((await POST(req('batch',{id,employees:[employee]}))).status,200);assert.equal((db.prepare('SELECT COUNT(*) n FROM employees WHERE dataset=?').get(id) as any).n,1);
+assert.equal((await POST(req('activate',{id,confirm:true}))).status,400);assert.equal(JSON.parse((db.prepare('SELECT payload FROM registry WHERE id=?').get('excel-config') as any).payload).dataset,'old');
+const upload=await PUT(new Request('http://test/api/imports?id='+id,{method:'PUT',headers:{'X-File-Size':'15'},body:'original source'}));assert.equal(upload.status,200);
+assert.equal((await POST(req('activate',{id,confirm:false}))).status,400);assert.equal((await POST(req('activate',{id,confirm:true}))).status,200);
+const e=JSON.parse((db.prepare('SELECT payload FROM employees WHERE dataset=?').get(id) as any).payload);assert.equal(e.photo,'');assert.equal(e.verified,false);
+assert.equal(JSON.parse((db.prepare('SELECT payload FROM registry WHERE id=?').get('excel-config') as any).payload).dataset,id);
+assert.equal((await POST(req('activate',{id,confirm:true}))).status,200);const old=id;id=await start(2);await PUT(new Request('http://test/api/imports?id='+id,{method:'PUT',headers:{'X-File-Size':'6'},body:'source'}));await POST(req('batch',{id,employees:[employee]}));assert.equal((await POST(req('activate',{id,confirm:true}))).status,409);
+let stale=await start();await PUT(new Request('http://test/api/imports?id='+stale,{method:'PUT',headers:{'X-File-Size':'6'},body:'source'}));await POST(req('batch',{id:stale,employees:[employee]}));db.exec("UPDATE registry SET revision=revision+1 WHERE id='excel-config'");assert.equal((await POST(req('activate',{id:stale,confirm:true}))).status,409);
+assert.equal(JSON.parse((db.prepare('SELECT payload FROM registry WHERE id=?').get('excel-config') as any).payload).dataset,old);
+ctx.user={userId:'other',displayName:'Other'};assert.equal((await GET(new Request('http://test/api/imports?id='+old+'&file=1'))).status,403);
+(ctx as any).user=null;assert.equal((await GET(new Request('http://test/api/imports'))).status,401);assert.equal((await POST(req('start',{}))).status,401);
+db.close();console.log('Import workflow: authentication, ownership, original archive, staging isolation, idempotent batches, count reconciliation, activation confirmation and revision conflicts passed.');
