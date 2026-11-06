@@ -14,3 +14,15 @@ assert.throws(()=>sqlRows("INSERT INTO employee (number) VALUES (evil());"),/Uns
 assert.throws(()=>sqlRows("INSERT INTO employee (number) SELECT number FROM another;"),/expected VALUES/);
 assert.throws(()=>sqlRows("UPDATE employee SET first='X';"),/Only INSERT/);
 console.log('Import parsers: CSV, mapping, duplicate conflicts, DynamoDB, nested JSON, date formats, MySQL/Oracle round-trip, SQL Server and rejected SQL expressions passed.');
+
+const sparseGender=[
+  {EMPLOYEE:'0005',CLEVEL:'123',NAME_REPORT:'Synthetic, First'},
+  {EMPLOYEE:'0006',CLEVEL:'123',NAME_REPORT:'Synthetic, Second','Sex or Gender':' f '},
+  {EMPLOYEE:'0007',CLEVEL:'123',NAME_REPORT:'Synthetic, Third','Sex or Gender':'M'},
+  {EMPLOYEE:'0008',CLEVEL:'123',NAME_REPORT:'Synthetic, Fourth','Sex or Gender':'2'},
+];
+const genderMapping=suggestMapping(sparseGender);
+assert.equal(genderMapping.gender,'Sex or Gender');
+const genderImport=normalise(sparseGender,genderMapping,'iso');
+assert.deepEqual(genderImport.employees.map(e=>e.gender),['','Female','Male','2']);
+assert.equal(genderImport.missingGender,1);
