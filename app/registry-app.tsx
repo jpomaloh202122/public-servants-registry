@@ -39,8 +39,10 @@ function RegistryWorkspace({displayName,email,signOutPath}:{displayName:string;e
    setConnected(true);setLoadError('');setLoaded(true);
   }
   const url='/api/registry?'+params;
+  let snapshot;
   try{
-   apply(await read(overview?url+'&basic=1':url));
+   snapshot=await read(overview?url+'&basic=1':url);
+   apply(snapshot);
   }catch(e){
    if(token!==loadId.current)return;
    setLoadError((e as Error).message);setConnected(false);setLoaded(true);
@@ -48,7 +50,23 @@ function RegistryWorkspace({displayName,email,signOutPath}:{displayName:string;e
   }
   if(overview&&token===loadId.current){
    void read('/api/registry?readinessTotal=1').then(result=>{if(token===loadId.current)setReadinessTotal(result);}).catch(()=>{});
-   try{apply(await read(url));}
+   try{
+    if(!query.trim()&&agency==='all'&&status==='all'&&readiness==='all'&&page===0){
+     const quality=await read('/api/registry?qualityOnly=1');
+     if(token===loadId.current)setSummary((current:any)=>{
+      if(quality.revision!==snapshot.revision)return {...current,qualityUnavailable:true};
+      const selected=quality.groups.reduce((totals:Map<string,{agency:string;total:number;active:number;ready:number}>,group:{agency:string;status:string;count:number;ready:number})=>{
+       const entry=totals.get(group.agency)??{agency:group.agency,total:0,active:0,ready:0};
+       entry.total+=Number(group.count);
+       if(group.status==='Active')entry.active+=Number(group.count);
+       entry.ready+=Number(group.ready||0);
+       totals.set(group.agency,entry);
+       return totals;
+      },new Map());
+      return {...current,asOf:quality.asOf,groups:quality.groups,flags:quality.flags,ready:quality.ready,matchedReady:quality.ready,selected:[...selected.values()],qualityPending:false,qualityUnavailable:false};
+     });
+    }else apply(await read(url));
+   }
    catch{if(token===loadId.current)setSummary((current:any)=>({...current,qualityUnavailable:true}));}
   }
  }

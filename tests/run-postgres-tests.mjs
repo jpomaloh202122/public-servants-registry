@@ -18,10 +18,24 @@ try{
 
  const run=async(sql,args=[])=>{let i=0;const parsed=postgresSQL(sql).sql.replace(/:p[0-9]+/g,()=>'$'+(++i));return db.query(parsed,args);};
  const adapter={dialect:'postgres',prepare(sql){return {bind(...args){return {async first(){return (await run(sql,args)).rows[0]||null;},async all(){return {results:(await run(sql,args)).rows};},async run(){return {meta:{changes:(await run(sql,args)).affectedRows||0}};}};},async all(){return {results:(await run(sql)).rows};}};}};
- globalThis.__pgFixture={DB:adapter};writeFileSync(join(dir,'runtime.mjs'),'export const env=globalThis.__pgFixture;');
+ const cache=new Map();
+ globalThis.__pgFixture={DB:adapter,BUCKET:{
+  async get(key){return cache.has(key)?{body:cache.get(key)}:null;},
+  async put(key,body){cache.set(key,body);}
+ }};writeFileSync(join(dir,'runtime.mjs'),'export const env=globalThis.__pgFixture;');
  await db.query('UPDATE registry SET payload=$1 WHERE id=$2',[JSON.stringify({dataset:'test',source:{source:'synthetic.csv',statusProvided:false},events:[]}), 'excel-config']);
  await db.query('INSERT INTO organisations VALUES ($1,$2,$3,$4)',['a','test','agency',JSON.stringify({id:'agency',code:'001',name:'Synthetic Agency',type:'Organisation'})]);
  const {listing}=await import(pathToFileURL(join(dir,'server-registry.mjs')));const list=await listing(new Request('https://test/api/registry?query=example&agency=agency'));assert.equal(Number(list.summary.total),10);assert.equal(Number(list.summary.matched),10);assert.equal(Number(list.summary.active),10);assert.equal(Number(list.summary.ready),1);assert.equal(Number(list.summary.matchedReady),1);assert.equal(list.summary.qualityPending,true);
+ const qualityRequest=new Request('https://test/api/registry?qualityOnly=1');
+ const quality=await listing(qualityRequest);
+ assert.equal(quality.flags.unverified,9);
+ const priorPrepare=adapter.prepare;
+ adapter.prepare=function(sql){
+  assert.ok(!sql.includes('GROUP BY agency,status'),'Warm quality request should reuse cached totals');
+  return priorPrepare.call(this,sql);
+ };
+ assert.deepEqual(await listing(qualityRequest),quality);
+ adapter.prepare=priorPrepare;
  const {managementData}=await import(pathToFileURL(join(dir,'server-management.mjs')));const management=await managementData(new Request('https://test/api/management-reports'),{displayName:'Test'});assert.equal(management.report.total,10);
  await db.exec(`INSERT INTO employees (id,dataset,number,agency,status,search,ready,payload)
  SELECT 'large-'||n,'test','large-'||n,'agency','Active','example',0,

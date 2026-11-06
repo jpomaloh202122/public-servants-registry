@@ -7,15 +7,56 @@ export function employeeStatement(dataset:string,e:Employee){return env.DB!.prep
 type QualityFlag=(typeof flagKeys)[number];
 type QualityGroup={agency:string;status:string;count:number}&Record<QualityFlag,number>;
 type Selection={agency:string;total:number;active:number;ready:number};
+let inFlight: {key:string; result:Promise<QualityGroup[]>}|undefined;
+
 export async function qualityGroups(c:Awaited<ReturnType<typeof config>>,asOf=pngToday()):Promise<QualityGroup[]>{
- const key='quality-summary:'+c.dataset;const cached=env.DB.dialect==='postgres'?null:await env.DB!.prepare('SELECT payload FROM registry WHERE id=?').bind(key).first<{payload:string}>();if(cached){const j=JSON.parse(cached.payload);if(j.revision===c.revision&&j.asOf===asOf&&j.version===3)return j.groups;}
- const groups=(await env.DB!.prepare(assessmentCTE(c.source,asOf,env.DB.dialect)+`SELECT agency,status,${aggregateColumns} FROM assessed GROUP BY agency,status`).bind(c.dataset).all<QualityGroup>()).results;
- if(env.DB.dialect!=='postgres')await env.DB!.prepare('INSERT INTO registry(id,revision,payload) VALUES (?,0,?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload').bind(key,JSON.stringify({version:3,revision:c.revision,asOf,groups})).run();return groups;
+ if(!c.dataset)return [];
+ const key='sources/quality-cache/v1/'+encodeURIComponent(c.dataset)+'/'+c.revision+'/'+asOf+'.json';
+ if(inFlight?.key===key)return inFlight.result;
+ const result=readQualityGroups(c,asOf,key);
+ inFlight={key,result};
+ try{return await result;}
+ finally{if(inFlight?.result===result)inFlight=undefined;}
 }
+
+async function readQualityGroups(c:Awaited<ReturnType<typeof config>>,asOf:string,key:string):Promise<QualityGroup[]>{
+ if(env.DB.dialect==='postgres'){
+  try{
+   const cached=await env.BUCKET.get(key);
+   if(cached?.body){
+    const groups:unknown=await new Response(cached.body).json();
+    if(Array.isArray(groups))return groups as QualityGroup[];
+   }
+  }catch{
+   // A missing or unavailable cache must not prevent a database read.
+  }
+ }else{
+  const cached=await env.DB.prepare('SELECT payload FROM registry WHERE id=?').bind('quality-summary:'+c.dataset).first<{payload:string}>();
+  if(cached){
+   const saved=JSON.parse(cached.payload);
+   if(saved.revision===c.revision&&saved.asOf===asOf&&saved.version===3)return saved.groups;
+  }
+ }
+ const {results:groups}=await env.DB.prepare(assessmentCTE(c.source,asOf,env.DB.dialect)+`SELECT agency,status,${aggregateColumns} FROM assessed GROUP BY agency,status`).bind(c.dataset).all<QualityGroup>();
+ if(env.DB.dialect==='postgres'){
+  try{await env.BUCKET.put(key,new TextEncoder().encode(JSON.stringify(groups)),{httpMetadata:{contentType:'application/json'}});}
+  catch{console.warn('Registry quality summary cache write failed.');}
+ }else{
+  await env.DB.prepare('INSERT INTO registry(id,revision,payload) VALUES (?,0,?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload')
+   .bind('quality-summary:'+c.dataset,JSON.stringify({version:3,revision:c.revision,asOf,groups})).run();
+ }
+ return groups;
+}
+
 export async function listing(req:Request){const c=await config(),u=new URL(req.url),asOf=pngToday();const search=employeeSearchPattern(u);const filters=new URL(u);filters.searchParams.delete('query');const {where,args}=qualityWhere(filters),cte=assessmentCTE(c.source,asOf,env.DB.dialect,!!search);const bindings=[c.dataset,...(search?[search]:[]),...args];const page=Math.max(0,parseInt(u.searchParams.get('page')||'0')||0),limit=Math.min(100,Math.max(1,parseInt(u.searchParams.get('limit')||'10')||10));
   const statusExpr=c.source
    ? env.DB.dialect==='postgres'?"CASE WHEN status='Not provided' AND NOT COALESCE((payload::jsonb->>'statusReviewed')::boolean,false) THEN 'Active' ELSE status END":"CASE WHEN status='Not provided' AND COALESCE(json_extract(payload,'$.statusReviewed'),0)=0 THEN 'Active' ELSE status END"
    : 'status';
+ if(u.searchParams.get('qualityOnly')==='1'){
+  const groups=await qualityGroups(c,asOf);
+  const flags=Object.fromEntries(flagKeys.map(k=>[k,groups.reduce((n,g)=>n+Number(g[k]||0),0)]));
+  return {revision:c.revision,asOf,groups,flags,ready:flags.ready};
+ }
  if(u.searchParams.get('readinessTotal')==='1'){
   const assessment=assessmentCTE(c.source,asOf,env.DB.dialect,false,true);
   const result=await env.DB.prepare(assessment+'SELECT COUNT(*) AS total FROM assessed WHERE ready=1')
