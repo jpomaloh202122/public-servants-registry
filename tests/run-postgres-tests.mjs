@@ -49,6 +49,13 @@ try{
  const readinessTotal=await listing(new Request("https://test/api/registry?readinessTotal=1"));
  assert.equal(readinessTotal.ready,1);
  assert.equal(readinessTotal.revision,overview.revision);
+ const readyPage=await listing(new Request('https://test/api/registry?basic=1&readiness=ready&agency=agency'));
+ assert.equal(Number(readyPage.summary.matched),readinessTotal.ready);
+ assert.deepEqual(readyPage.data.employees.map(employee=>employee.id),['7']);
+ const emptyReadyPage=await listing(new Request('https://test/api/registry?readiness=ready&status=Retired'));
+ assert.equal(Number(emptyReadyPage.summary.matched),0);
+ assert.equal(emptyReadyPage.data.employees.length,0);
+
  await db.query('UPDATE employees SET search=$1 WHERE dataset=$2 AND number=$3',["jane o'neill_100%!",'test','0']);
  const searchUrl=new URL('https://test/api/registry');
  searchUrl.searchParams.set('query',"  O’Neill_100%!  ".replace('’',"'"));

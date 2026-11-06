@@ -48,7 +48,7 @@ async function readQualityGroups(c:Awaited<ReturnType<typeof config>>,asOf:strin
  return groups;
 }
 
-export async function listing(req:Request){const c=await config(),u=new URL(req.url),asOf=pngToday();const search=employeeSearchPattern(u);const filters=new URL(u);filters.searchParams.delete('query');const {where,args}=qualityWhere(filters),cte=assessmentCTE(c.source,asOf,env.DB.dialect,!!search);const bindings=[c.dataset,...(search?[search]:[]),...args];const page=Math.max(0,parseInt(u.searchParams.get('page')||'0')||0),limit=Math.min(100,Math.max(1,parseInt(u.searchParams.get('limit')||'10')||10));
+export async function listing(req:Request){const c=await config(),u=new URL(req.url),asOf=pngToday();const search=employeeSearchPattern(u);const filters=new URL(u);filters.searchParams.delete('query');const {where,args}=qualityWhere(filters),cte=assessmentCTE(c.source,asOf,env.DB.dialect,!!search,u.searchParams.get('readiness')==='ready');const bindings=[c.dataset,...(search?[search]:[]),...args];const page=Math.max(0,parseInt(u.searchParams.get('page')||'0')||0),limit=Math.min(100,Math.max(1,parseInt(u.searchParams.get('limit')||'10')||10));
   const statusExpr=c.source
    ? env.DB.dialect==='postgres'?"CASE WHEN status='Not provided' AND NOT COALESCE((payload::jsonb->>'statusReviewed')::boolean,false) THEN 'Active' ELSE status END":"CASE WHEN status='Not provided' AND COALESCE(json_extract(payload,'$.statusReviewed'),0)=0 THEN 'Active' ELSE status END"
    : 'status';
@@ -63,7 +63,8 @@ export async function listing(req:Request){const c=await config(),u=new URL(req.
    .bind(c.dataset).first<{total:number}>();
   return {revision:c.revision,ready:Number(result?.total??0)};
  }
- if(u.searchParams.get('basic')==='1'){
+ const filtered=!!search||where!=='1=1';
+ if(u.searchParams.get('basic')==='1'&&!filtered&&page===0){
   const [rows,orgs,counts]=await Promise.all([
    env.DB.prepare('SELECT payload FROM employees WHERE dataset=? ORDER BY number LIMIT ?').bind(c.dataset,limit).all<{payload:string}>(),
    env.DB.prepare('SELECT payload FROM organisations WHERE dataset=? ORDER BY key').bind(c.dataset).all<{payload:string}>(),
@@ -72,7 +73,7 @@ export async function listing(req:Request){const c=await config(),u=new URL(req.
   const total=Number(counts?.total??0),active=Number(counts?.active??0);
   return {revision:c.revision,data:{employees:rows.results.map(r=>effectiveEmployee(JSON.parse(r.payload),c.source)),agencies:orgs.results.map(r=>JSON.parse(r.payload)),events:c.events||[],sample:false},summary:{total,active,ready:0,matched:total,matchedActive:active,matchedReady:0,flags:{},groups:[],selected:[],source:c.source,asOf,qualityPending:true}};
  }
- if(search){
+ if(filtered){
   const [rows,orgs,counts,selected]=await Promise.all([
    env.DB.prepare(cte+`SELECT payload FROM assessed WHERE ${where} ORDER BY number LIMIT ? OFFSET ?`).bind(...bindings,limit,page*limit).all<{payload:string}>(),
    env.DB.prepare('SELECT payload FROM organisations WHERE dataset=? ORDER BY key').bind(c.dataset).all<{payload:string}>(),
