@@ -32,6 +32,9 @@ try{
  assert.equal(overview.summary.active,150011);
  assert.equal(overview.data.employees.length,6);
  assert.equal(overview.summary.qualityPending,true);
+ const readinessTotal=await listing(new Request("https://test/api/registry?readinessTotal=1"));
+ assert.equal(readinessTotal.ready,1);
+ assert.equal(readinessTotal.revision,overview.revision);
  await db.query('UPDATE employees SET search=$1 WHERE dataset=$2 AND number=$3',["jane o'neill_100%!",'test','0']);
  const searchUrl=new URL('https://test/api/registry');
  searchUrl.searchParams.set('query',"  O’Neill_100%!  ".replace('’',"'"));

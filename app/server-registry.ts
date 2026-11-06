@@ -16,6 +16,12 @@ export async function listing(req:Request){const c=await config(),u=new URL(req.
   const statusExpr=c.source
    ? env.DB.dialect==='postgres'?"CASE WHEN status='Not provided' AND NOT COALESCE((payload::jsonb->>'statusReviewed')::boolean,false) THEN 'Active' ELSE status END":"CASE WHEN status='Not provided' AND COALESCE(json_extract(payload,'$.statusReviewed'),0)=0 THEN 'Active' ELSE status END"
    : 'status';
+ if(u.searchParams.get('readinessTotal')==='1'){
+  const assessment=assessmentCTE(c.source,asOf,env.DB.dialect,false,true);
+  const result=await env.DB.prepare(assessment+'SELECT COUNT(*) AS total FROM assessed WHERE ready=1')
+   .bind(c.dataset).first<{total:number}>();
+  return {revision:c.revision,ready:Number(result?.total??0)};
+ }
  if(u.searchParams.get('basic')==='1'){
   const [rows,orgs,counts]=await Promise.all([
    env.DB.prepare('SELECT payload FROM employees WHERE dataset=? ORDER BY number LIMIT ?').bind(c.dataset,limit).all<{payload:string}>(),
