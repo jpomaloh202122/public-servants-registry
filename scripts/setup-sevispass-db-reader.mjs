@@ -6,6 +6,7 @@ import {randomBytes} from 'node:crypto';
 
 const region = process.env.AWS_REGION || 'ap-southeast-2';
 const stack = process.argv[2] || 'ps-id-registry-backend';
+let step = 'Discover registry resources';
 function aws(service, operation, payload) {
   const directory = mkdtempSync(join(tmpdir(), 'sevispass-db-'));
   try {
@@ -16,8 +17,12 @@ function aws(service, operation, payload) {
     {encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe']}));
   } catch (error) {
     // AWS errors can echo SQL containing credentials. Never print the raw error.
-    const missing = String(error.stderr || '').includes('ResourceNotFoundException');
-    const safe = new Error(service + ' ' + operation + ' failed. Review AWS permissions and resource state.');
+    const stderr = String(error.stderr || '');
+    const missing = stderr.includes('ResourceNotFoundException');
+    const code = stderr.match(/An error occurred \(([^)]+)\)/)?.[1] || 'AWS CLI error';
+    const sensitive = service === 'secretsmanager' || /PASSWORD/i.test(payload.sql || '');
+    const detail = sensitive ? code : stderr.trim().slice(0, 1200);
+    const safe = new Error(step + ': ' + service + ' ' + operation + ' failed. ' + detail);
     safe.missing = missing;
     throw safe;
   } finally {
@@ -39,6 +44,7 @@ try {
   } catch (error) {
     if (!error.missing) throw error;
     // Avoid taking over a pre-existing role without its managed credential.
+    step = 'Check for existing reader role';
     const existing = aws('rds-data', 'execute-statement', {...base,
       sql: "SELECT 1 FROM pg_roles WHERE rolname='sevispass_reader'"});
     if (existing.records.length) throw Error('Existing sevispass_reader requires administrator review.');
@@ -53,12 +59,20 @@ try {
   const transactionId = aws('rds-data', 'begin-transaction', base).transactionId;
   const run = sql => aws('rds-data', 'execute-statement', {...base, transactionId, sql});
   try {
-    for (const sql of readFileSync(new URL('../infra/postgres/sevispass-reader.sql', import.meta.url), 'utf8').split('\n-- statement\n'))
+    const statements = readFileSync(new URL('../infra/postgres/sevispass-reader.sql', import.meta.url), 'utf8').split('\n-- statement\n');
+    for (const [index, sql] of statements.entries()) {
+      step = 'Configure reader statement ' + (index + 1);
       if (sql.trim()) run(sql);
+    }
+    step = 'Set reader password';
     run("ALTER ROLE sevispass_reader PASSWORD '" + credentials.password + "'");
     aws('rds-data', 'commit-transaction', {resourceArn: base.resourceArn, secretArn: base.secretArn, transactionId});
   } catch (error) {
-    aws('rds-data', 'rollback-transaction', {resourceArn: base.resourceArn, secretArn: base.secretArn, transactionId});
+    try {
+      aws('rds-data', 'rollback-transaction', {resourceArn: base.resourceArn, secretArn: base.secretArn, transactionId});
+    } catch {
+      console.error('Rollback failed. Inspect the transaction state before retrying.');
+    }
     throw error;
   }
   console.log(JSON.stringify({host: cluster.Endpoint, port: cluster.Port, database: base.database,

@@ -10,6 +10,12 @@ try {
       [dataset, dataset, '000123', 'agency', 'Not provided', 'officer', 0,
         JSON.stringify({first:'Synthetic',last:'Officer',photo:'portraits/example',customField:'preserved'})]);
   }
+  // Aurora's owner can create roles but is not a PostgreSQL superuser.
+  await db.exec('CREATE ROLE provisioning_owner CREATEROLE');
+  await db.exec('SET ROLE provisioning_owner');
+  const roleStatements = readFileSync('infra/postgres/sevispass-reader.sql','utf8').split('\n-- statement\n');
+  await db.exec(roleStatements.slice(0, 2).join('\n'));
+  await db.exec('RESET ROLE');
   await db.exec(readFileSync('infra/postgres/sevispass-reader.sql','utf8').replace('ON DATABASE registry', 'ON DATABASE postgres'));
   await db.exec('SET ROLE sevispass_reader');
   const result = await db.query('SELECT * FROM sevispass.employees WHERE employee_number=$1',['000123']);

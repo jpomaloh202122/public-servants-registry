@@ -3,12 +3,16 @@ BEGIN
   IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname='sevispass_reader') THEN
     CREATE ROLE sevispass_reader LOGIN;
   END IF;
+  IF EXISTS (SELECT FROM pg_roles WHERE rolname='sevispass_reader'
+             AND (rolsuper OR rolcreatedb OR rolcreaterole OR rolreplication OR rolbypassrls)) THEN
+    RAISE EXCEPTION 'Reader role has elevated attributes and requires administrator review';
+  END IF;
   IF EXISTS (SELECT FROM pg_auth_members m JOIN pg_roles r ON r.oid=m.member WHERE r.rolname='sevispass_reader') THEN
     RAISE EXCEPTION 'Reader role memberships require administrator review';
   END IF;
 END $$;
 -- statement
-ALTER ROLE sevispass_reader WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS CONNECTION LIMIT 5;
+ALTER ROLE sevispass_reader WITH LOGIN NOINHERIT CONNECTION LIMIT 5;
 -- statement
 ALTER ROLE sevispass_reader SET default_transaction_read_only = on;
 -- statement
