@@ -17,7 +17,14 @@ try{
  assert.match(parsed.sql,/AS "missingStatus"/);const result=await db.query(parsed.sql);assert.equal(Number(result.rows[0].conflicts),1);
 
  const run=async(sql,args=[])=>{let i=0;const parsed=postgresSQL(sql).sql.replace(/:p[0-9]+/g,()=>'$'+(++i));return db.query(parsed,args);};
- const adapter={dialect:'postgres',prepare(sql){return {bind(...args){return {async first(){return (await run(sql,args)).rows[0]||null;},async all(){return {results:(await run(sql,args)).rows};},async run(){return {meta:{changes:(await run(sql,args)).affectedRows||0}};}};},async all(){return {results:(await run(sql)).rows};}};}};
+ const adapter={dialect:'postgres',prepare(sql){
+  const bind=(...args)=>({
+   async first(){return (await run(sql,args)).rows[0]??null;},
+   async all(){return {results:(await run(sql,args)).rows};},
+   async run(){return {meta:{changes:(await run(sql,args)).affectedRows||0}};}
+  });
+  return {...bind(),bind};
+ }};
  const cache=new Map();
  globalThis.__pgFixture={DB:adapter,BUCKET:{
   async get(key){return cache.has(key)?{body:cache.get(key)}:null;},
