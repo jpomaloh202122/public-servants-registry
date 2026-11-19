@@ -11,6 +11,7 @@
     "start": "next start",
     "typecheck": "tsc --noEmit",
     "test:payroll": "node tests/run-payroll-lifecycle-tests.mjs && node tests/run-import-postgres-tests.mjs",
+    "test:id-cards": "node tests/run-id-card-tests.mjs",
     "test:quality": "node tests/run-quality-tests.mjs",
     "test:imports": "node tests/run-import-tests.mjs",
     "test:reports": "node tests/run-management-tests.mjs",

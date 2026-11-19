@@ -87,3 +87,7 @@ SevisPass integration, high availability, capacity/load testing, agency permissi
 ## Payroll lifecycle
 
 Full payroll snapshots now retain missing officers as Inactive and queue signed credential-change webhooks. Deploy the database triggers and dispatcher before activating another source. See [Payroll lifecycle and webhook deployment](docs/payroll-lifecycle-webhooks.md) for setup, partner configuration and acceptance.
+
+## Digital ID card previews
+
+Ready employees have a card icon in the employee register for a GPO-branded preview and two-sided PDF. The server rechecks current readiness. See [ID card previews](docs/id-card-previews.md) for access, validation and the SevisPass issuance boundary.

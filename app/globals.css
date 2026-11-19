@@ -22,3 +22,51 @@
 .login-brand img{width:min(160px,40%);height:auto;flex:none;object-fit:contain}
 
 .status.inactive,.status.resigned,.status.deceased{background:#fce8e6;color:#8b231e}.status.inactive i,.status.resigned i,.status.deceased i{background:#8b231e}
+
+.employee-actions{display:flex;align-items:center;gap:3px}
+.id-card-dialog{border:0;border-radius:16px;padding:24px;width:min(1040px,calc(100vw - 32px));max-height:90svh;overflow:auto;color:#252629;box-shadow:0 24px 80px #0004}
+.id-card-dialog::backdrop{background:#151a24b8}
+.id-card-heading{display:flex;align-items:center;justify-content:space-between;gap:20px}
+.id-card-note{margin:14px 0 22px;color:#60656d;max-width:850px;font-size:15px}
+.id-card-board{display:grid;grid-template-columns:1fr 1fr;gap:20px;padding:20px;background:#f1f3f5;border-radius:12px}
+.ps-card{aspect-ratio:86/54;background:#fff;border:1px solid #d7d9dd;border-radius:12px;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 4px 12px #00000010}
+.ps-card header{background:#751e24;border-bottom:3px solid #be913a;color:white;display:flex;align-items:center;gap:14px;padding:8px 14px;min-height:64px}
+.ps-card header>div{display:flex;flex-direction:column;gap:3px;min-width:0}
+.ps-card header span{font-size:9px;letter-spacing:.4px}
+.ps-card header strong{font-size:18px;line-height:1.2}
+.ps-card-emblem{width:70px;height:46px;object-fit:contain;background:#fff;border-radius:5px;padding:3px}
+.ps-card-body{flex:1;min-height:0;display:grid;grid-template-columns:99px 1fr;gap:18px;padding:16px}
+.ps-card-photo{width:99px;height:128px;object-fit:contain;background:#eff1f3;border-radius:3px;align-self:center}
+.ps-card-identity{min-width:0;display:flex;flex-direction:column;justify-content:center;align-items:flex-start}
+.ps-card-identity h3{font-size:20px;line-height:1.2;margin:0 0 10px;overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.ps-card-identity span,.ps-card-details>span{font-size:10px;color:#676b73;margin:5px 0 2px;letter-spacing:.7px}
+.ps-card-identity>strong{font-size:21px;line-height:1.2;overflow-wrap:anywhere}
+.ps-card-identity>b{font-size:16px;overflow-wrap:anywhere}
+.ps-card footer{margin:0;background:#f9f0dc;padding:8px 6px;text-align:center;letter-spacing:.5px;font-size:10px;font-weight:700;color:#751e24}
+.ps-card-details{padding:13px 17px;flex:1;min-height:0;display:flex;flex-direction:column;gap:2px}
+.ps-card-details>strong,.ps-card-details>p{font-size:14px;line-height:1.3;overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.ps-card-details small{font-size:10px;line-height:1.3;color:#676b73}
+.ps-card-ready{color:#285e41;font-size:12px;margin-top:auto;margin-bottom:3px}
+.id-card-buttons{display:flex;justify-content:flex-end;gap:10px;margin-top:20px}
+.id-card-error{margin-top:16px}
+@media(max-width:760px){
+ .id-card-board{grid-template-columns:1fr;padding:10px}
+ .id-card-dialog{padding:16px}
+ .ps-card{max-width:470px;width:100%;margin:auto}
+ .ps-card header{min-height:46px;padding:6px 10px;gap:8px}
+ .ps-card header strong{font-size:14px}
+ .ps-card header span{font-size:8px}
+ .ps-card-emblem{width:50px;height:32px;padding:2px}
+ .ps-card-body{grid-template-columns:60px 1fr;padding:8px;gap:10px}
+ .ps-card-photo{width:60px;height:78px}
+ .ps-card-identity h3{font-size:14px;margin-bottom:4px;-webkit-line-clamp:2}
+ .ps-card-identity span,.ps-card-details>span{font-size:8px;margin:3px 0 1px}
+ .ps-card-identity>strong{font-size:18px}
+ .ps-card-identity>b{font-size:13px}
+ .ps-card footer{font-size:8.5px;padding:5px 3px}
+ .ps-card-details{padding:8px 10px;gap:1px}
+ .ps-card-details>strong,.ps-card-details>p{font-size:11px;line-height:1.2}
+ .ps-card-details small{font-size:8px}
+ .ps-card-ready{font-size:9px}
+ .id-card-buttons{flex-wrap:wrap}
+}
