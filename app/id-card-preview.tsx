@@ -1,6 +1,7 @@
 'use client';
 import {useEffect,useRef,useState} from 'react';
 import {Download,RefreshCw,ShieldCheck,X} from 'lucide-react';
+import {PassDesign} from './pass-design';
 import type {IdCard} from './id-card';
 class CardRequestError extends Error {
  constructor(message:string,readonly checks:string[]=[]){super(message);}
@@ -21,7 +22,22 @@ async function asset(path:string) {
  for(let index=0;index<bytes.length;index+=32768)binary+=String.fromCharCode(...bytes.subarray(index,index+32768));
  return btoa(binary);
 }
+async function portraitForPrint(url:string) {
+ const image=new Image();
+ image.src=url;
+ await image.decode();
+ const canvas=document.createElement('canvas');
+ canvas.width=360;canvas.height=480;
+ const ctx=canvas.getContext('2d');
+ if(!ctx)throw Error('The portrait could not be prepared for printing.');
+ const scale=Math.max(360/image.naturalWidth,480/image.naturalHeight);
+ const width=image.naturalWidth*scale,height=image.naturalHeight*scale;
+ ctx.fillStyle='#fff';ctx.fillRect(0,0,360,480);
+ ctx.drawImage(image,(360-width)/2,(480-height)/2,width,height);
+ return canvas.toDataURL('image/jpeg',0.94);
+}
 export default function IdCardPreview({number,onClose,onReview,onIssued}:{number:string;onClose:()=>void;onReview?:()=>void;onIssued?:()=>void}) {
+ const [wallet,setWallet]=useState(false);
  const alive=useRef(true);
  useEffect(()=>{alive.current=true;return()=>{alive.current=false;};},[]);
  const dialog=useRef<HTMLDialogElement>(null);
@@ -54,10 +70,10 @@ export default function IdCardPreview({number,onClose,onReview,onIssued}:{number
   setBusy('Preparing card…');setError('');setChecks([]);
   try {
    const current=await readCard(number);
-   const [logo,font,bold,lib]=await Promise.all([
-    asset('/png-state-emblem.png'),asset('/report-fonts/DejaVuSans.ttf'),asset('/report-fonts/DejaVuSans-Bold.ttf'),import('./id-card-pdf')
+   const [logo,font,bold,lib,portrait]=await Promise.all([
+    asset('/png-state-emblem.png'),asset('/report-fonts/DejaVuSans.ttf'),asset('/report-fonts/DejaVuSans-Bold.ttf'),import('./id-card-pdf'),portraitForPrint(current.photoUrl)
    ]);
-   const pdf=lib.makeIdCardPdf(current,{logo:'data:image/png;base64,'+logo,font,bold});
+   const pdf=lib.makeIdCardPdf(current,{logo:'data:image/png;base64,'+logo,font,bold,portrait});
    const latest=await readCard(number);
    if(latest.datasetId!==current.datasetId||latest.revision!==current.revision||latest.cardId!==current.cardId)
     throw Error('The registry changed while preparing the PDF. Recheck and retry.');
@@ -67,26 +83,17 @@ export default function IdCardPreview({number,onClose,onReview,onIssued}:{number
   finally{setBusy('');}
  }
  return <dialog ref={dialog} className="id-card-dialog" aria-labelledby="id-card-title" onCancel={event=>{event.preventDefault();onClose();}}>
-  <div className="id-card-heading"><div><div className="eyebrow">GOVERNMENT OF PNG PUBLIC SERVANTS REGISTRY SYSTEM</div><h2 id="id-card-title">Public Servant Digital ID</h2></div>
+  <div className="id-card-heading"><div><div className="eyebrow">GOVERNMENT OF PNG PUBLIC SERVANTS REGISTRY SYSTEM</div><h2 id="id-card-title">Public Servant ID</h2></div>
    <button className="btn icon" aria-label="Close ID card preview" onClick={onClose}><X size={20}/></button></div>
   <p className="id-card-note">{card?.status==='issued'?'Issued in the registry. Scan the QR code to check the current ID record.':
    'Review the saved employee checks, then approve issuance. SevisWallet credential delivery follows the partner integration.'}</p>
   {!card&&!error&&<p role="status">Checking payroll, record completeness and the verified portrait…</p>}
   {card&&<>
-   <div className="id-card-board">
-    <section aria-label="Public Servant ID card" className="ps-card-template">
-     <header><span>GOVERNMENT OF PAPUA NEW GUINEA</span><div><strong>Public Servant Digital ID</strong><b>{card.status.toUpperCase()}</b></div></header>
-     <div className="ps-card-template-body">
-      <img className="ps-card-watermark" src="/png-state-emblem.png" alt=""/>
-      <div className="ps-card-fields"><span>FULL NAME</span><h3 title={card.name}>{card.name}</h3>
-       <span>DEPARTMENT</span><strong title={card.agency}>{card.agency}</strong>
-       <span>POSITION</span><strong title={card.position}>{card.position}</strong>
-       <div className="ps-card-bottom"><div><span>GENDER</span><b>{card.gender}</b></div><div><span>EMPLOYEE NUMBER</span><b>{card.employeeNumber}</b></div></div>
-      </div>
-      <div className="ps-card-qr"><img src={card.qrDataUrl} alt="QR code for online ID verification"/><strong>Scan to verify</strong></div>
-     </div>
-    </section>
+   <div className="id-card-buttons" role="group" aria-label="ID format">
+    <button type="button" className={'btn'+(!wallet?' primary':'')} aria-pressed={!wallet} onClick={()=>setWallet(false)}>Physical pass</button>
+    <button type="button" className={'btn'+(wallet?' primary':'')} aria-pressed={wallet} onClick={()=>setWallet(true)}>Digital ID</button>
    </div>
+   <div className="id-card-board"><PassDesign card={card} wallet={wallet}/></div>
    <div className="card-evidence"><img src={card.photoUrl} alt="Saved verified portrait"/><div><b>Verified portrait on file</b>
     <p>Employee {card.employeeNumber} · Payroll period {card.payrollCycle??'Not recorded'} · Revision {card.revision}</p>
     <p>{card.status==='issued'?'Registry ID '+card.cardId:card.needsReplacement?'The earlier ID requires replacement after record changes.':'Awaiting issuance approval.'}</p>
@@ -97,7 +104,7 @@ export default function IdCardPreview({number,onClose,onReview,onIssued}:{number
    {onReview&&<button className="btn" disabled={!!busy} onClick={onReview}>Review employee record</button>}
    <button className="btn" disabled={!!busy} onClick={()=>{setCard(null);setError('');setChecks([]);setRetry(value=>value+1);}}><RefreshCw size={16}/>Recheck</button>
    {card&&card.status!=='issued'&&<button className="btn primary" disabled={!!busy||!card.issuanceAvailable} onClick={issue}><ShieldCheck size={16}/>{card.needsReplacement?'Issue replacement ID':'Approve and issue ID'}</button>}
-   <button className="btn" disabled={!card||!!busy} onClick={download}><Download size={16}/>{busy||('Download '+(card?.status==='issued'?'issued ID':'preview')+' PDF')}</button>
+   <button className="btn" disabled={!card||!!busy} onClick={download}><Download size={16}/>{busy||('Download '+(card?.status==='issued'?'issued pass':'pass preview')+' PDF')}</button>
   </div>
  </dialog>;
 }
