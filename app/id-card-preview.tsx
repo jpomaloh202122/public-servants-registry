@@ -55,9 +55,9 @@ export default function IdCardPreview({number,onClose,onReview,onIssued}:{number
   try {
    const current=await readCard(number);
    const [logo,font,bold,lib]=await Promise.all([
-    asset('/png-state-emblem.jpg'),asset('/report-fonts/DejaVuSans.ttf'),asset('/report-fonts/DejaVuSans-Bold.ttf'),import('./id-card-pdf')
+    asset('/png-state-emblem.png'),asset('/report-fonts/DejaVuSans.ttf'),asset('/report-fonts/DejaVuSans-Bold.ttf'),import('./id-card-pdf')
    ]);
-   const pdf=lib.makeIdCardPdf(current,{logo:'data:image/jpeg;base64,'+logo,font,bold});
+   const pdf=lib.makeIdCardPdf(current,{logo:'data:image/png;base64,'+logo,font,bold});
    const latest=await readCard(number);
    if(latest.datasetId!==current.datasetId||latest.revision!==current.revision||latest.cardId!==current.cardId)
     throw Error('The registry changed while preparing the PDF. Recheck and retry.');
@@ -77,7 +77,7 @@ export default function IdCardPreview({number,onClose,onReview,onIssued}:{number
     <section aria-label="Public Servant ID card" className="ps-card-template">
      <header><span>GOVERNMENT OF PAPUA NEW GUINEA</span><div><strong>Public Servant Digital ID</strong><b>{card.status.toUpperCase()}</b></div></header>
      <div className="ps-card-template-body">
-      <img className="ps-card-watermark" src="/png-state-emblem.jpg" alt=""/>
+      <img className="ps-card-watermark" src="/png-state-emblem.png" alt=""/>
       <div className="ps-card-fields"><span>FULL NAME</span><h3 title={card.name}>{card.name}</h3>
        <span>DEPARTMENT</span><strong title={card.agency}>{card.agency}</strong>
        <span>POSITION</span><strong title={card.position}>{card.position}</strong>

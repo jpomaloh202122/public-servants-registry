@@ -23,10 +23,21 @@ export function makeIdCardPdf(card:IdCard,assets:IdCardAssets) {
  doc.saveGraphicsState();doc.setGState(new GState({opacity:0.09}));
  doc.addImage(assets.logo,assets.logo.startsWith('data:image/jpeg')?'JPEG':'PNG',12.5,12,49,33);
  doc.restoreGraphicsState();
- doc.setFillColor(59,35,44);doc.rect(0,0,86,10.8,'F');
- doc.setTextColor(237,187,78);text('GOVERNMENT OF PAPUA NEW GUINEA',3.5,3.5,5.3,true);
+ doc.setFillColor(25,25,25);doc.rect(0,0,86,10.8,'F');
+ doc.setFillColor(174,22,35);doc.rect(0,10.5,86,0.4,'F');
+ // A foil-inspired band sits below all identity fields and the QR quiet zone.
+ const foilStops=[[169,108,25],[242,203,104],[255,245,202],[191,135,46],[247,220,148],[169,108,25]];
+ for(let x=0;x<86;x++){
+  const offset=x/85*(foilStops.length-1);
+  const start=Math.min(Math.floor(offset),foilStops.length-2);
+  const rgb=foilStops[start].map((value,i)=>Math.round(value+(foilStops[start+1][i]-value)*(offset-start)));
+  doc.setFillColor(rgb[0],rgb[1],rgb[2]);doc.rect(x,52.3,1.02,1.7,'F');
+ }
+ doc.setDrawColor(255,237,187);doc.setLineWidth(.12);
+ for(let x=1;x<86;x+=1.4)doc.line(x,52.3,x-.8,54);
+ doc.setTextColor(239,187,72);text('GOVERNMENT OF PAPUA NEW GUINEA',3.5,3.5,5.3,true);
  doc.setTextColor(255,255,255);text('Public Servant Digital ID',3.5,8.8,11,true);
- doc.setTextColor(237,187,78);doc.setFont('Card','bold');doc.setFontSize(5.4);
+ doc.setTextColor(239,187,72);doc.setFont('Card','bold');doc.setFontSize(5.4);
  doc.text(card.status.toUpperCase(),82.3,8.1,{align:'right'});
  const label=(value:string,x:number,y:number)=>{doc.setTextColor(82,93,94);text(value,x,y,5.1,true);doc.setTextColor(31,42,43);};
  label('FULL NAME',3.5,15.9);field(card.name,'name',3.5,21.5,51.5,1,14,7);

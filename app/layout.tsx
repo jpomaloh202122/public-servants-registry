@@ -5,8 +5,8 @@ export const metadata: Metadata = {
   title: "Government of PNG Public Servants Registry System",
   description: "Private employee registry and public service reporting.",
   icons: {
-    icon: "/png-state-emblem.jpg",
-    shortcut: "/png-state-emblem.jpg",
+    icon: "/png-state-emblem.png",
+    shortcut: "/png-state-emblem.png",
   },
 };
 

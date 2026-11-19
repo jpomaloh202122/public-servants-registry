@@ -92,7 +92,7 @@ try {
  const {makeIdCardPdf}=await import(pathToFileURL(join(dir,'id-card-pdf.mjs')));
  const QRCode=(await import('qrcode')).default;
  const sample={...issued,status:'sample',verificationUrl:'https://main.d2p2kldeb52a64.amplifyapp.com/verify/preview',qrDataUrl:await QRCode.toDataURL('https://main.d2p2kldeb52a64.amplifyapp.com/verify/preview',{margin:4,width:360})};
- const assets={logo:'data:image/jpeg;base64,'+readFileSync('public/png-state-emblem.jpg').toString('base64'),font:readFileSync('public/report-fonts/DejaVuSans.ttf').toString('base64'),bold:readFileSync('public/report-fonts/DejaVuSans-Bold.ttf').toString('base64')};
+ const assets={logo:'data:image/png;base64,'+readFileSync('public/png-state-emblem.png').toString('base64'),font:readFileSync('public/report-fonts/DejaVuSans.ttf').toString('base64'),bold:readFileSync('public/report-fonts/DejaVuSans-Bold.ttf').toString('base64')};
  const pdf=makeIdCardPdf(sample,assets);assert.equal(pdf.getNumberOfPages(),1);assert.equal(pdf.internal.pageSize.getWidth(),86);assert.equal(pdf.internal.pageSize.getHeight(),54);
  assert.equal(makeIdCardPdf({...sample,name:'Émilie Example'},assets).getNumberOfPages(),1);
  assert.throws(()=>makeIdCardPdf({...sample,name:'Overlong name '.repeat(200)},assets),/too long/);

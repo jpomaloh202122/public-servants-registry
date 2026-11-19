@@ -18,7 +18,7 @@ export default async function VerifyCardPage({params}:{params:Promise<{token:str
  try{result=await verifyIdCard(token);}catch{result={status:'unavailable',checkedAt:new Date().toISOString()};}
  const [title,description]=descriptions[result.status];
  return <main className="card-verification">
-  <img src="/png-state-emblem.jpg" alt="Government of PNG Public Servants Registry System"/>
+  <img src="/png-state-emblem.png" alt="Government of PNG Public Servants Registry System"/>
   <p className="eyebrow">PUBLIC SERVANT ID VERIFICATION</p>
   <h1 className={result.status==='valid'?'verification-valid':''}>{title}</h1>
   <p>{description}</p>
