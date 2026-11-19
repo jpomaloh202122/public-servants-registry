@@ -28,7 +28,7 @@ try {
   async run(){return {meta:{changes:(await run(sql,args)).affectedRows}};}
  };},async first(){return (await run(sql)).rows[0]||null;},async all(){return {results:(await run(sql)).rows};}};}},
  BUCKET:{async head(){return {ContentLength:1};}}};
- writeFileSync(join(directory,'runtime.mjs'),"export const env=globalThis.__activationFixture;export const getChatGPTUser=async()=>({userId:'owner',displayName:'Test'});export const uploadURL=async()=>'';export const downloadURL=async()=>'';");
+ writeFileSync(join(directory,'runtime.mjs'),"export const env=globalThis.__activationFixture;export const getChatGPTUser=async()=>({canManageSources:true,userId:'owner',displayName:'Test'});export const uploadURL=async()=>'';export const downloadURL=async()=>'';");
  await db.exec(readFileSync('infra/postgres/001-schema.sql','utf8'));
  await db.exec(readFileSync('infra/postgres/003-payroll-lifecycle.sql','utf8'));
  await db.exec(`INSERT INTO organisations VALUES ('old:a','old','a','{"id":"a","code":"001","name":"Agency"}');

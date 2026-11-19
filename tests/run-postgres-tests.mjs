@@ -79,7 +79,7 @@ try{
  .replace("'../../server-registry'","'./server-registry.mjs'")
  .replace("'@/lib/aws-runtime'","'./runtime.mjs'");
  writeFileSync(join(dir,'changes.mjs'),ts.transpileModule(route,{compilerOptions:{module:ts.ModuleKind.ESNext}}).outputText);
- writeFileSync(join(dir,'auth.mjs'),"export const getChatGPTUser=async()=>({userId:'test'});");
+ writeFileSync(join(dir,'auth.mjs'),"export const getChatGPTUser=async()=>({canManageSources:true,userId:'test'});");
  await db.query('UPDATE registry SET payload=$1 WHERE id=$2',[JSON.stringify({dataset:'next',source:{previousDataset:'test',previousDefaultStatus:'Active',defaultEmploymentStatus:'Active'},events:[]}),'excel-config']);
  await db.query('INSERT INTO organisations VALUES ($1,$2,$3,$4)',['b','next','reordered',JSON.stringify({code:'001',name:'Synthetic Agency'})]);
  await db.exec(`INSERT INTO employees (id,dataset,number,agency,status,search,ready,payload)

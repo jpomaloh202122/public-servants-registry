@@ -55,6 +55,9 @@ Resources:
       EnabledMfas: [SOFTWARE_TOKEN_MFA]
       Policies:
         PasswordPolicy: {MinimumLength: 14, RequireLowercase: true, RequireUppercase: true, RequireNumbers: true, RequireSymbols: true}
+  SourceManagers:
+    Type: AWS::Cognito::UserPoolGroup
+    Properties: {GroupName: RegistrySourceManagers, UserPoolId: !Ref UserPool}
   Users:
     Type: AWS::Cognito::UserPoolGroup
     Properties: {GroupName: RegistryUsers, UserPoolId: !Ref UserPool}

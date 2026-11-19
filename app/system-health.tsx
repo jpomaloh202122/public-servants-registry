@@ -4,7 +4,7 @@ import {useCallback,useEffect,useState} from 'react';
 type Health = {
   checkedAt: string;
   services: {name:string;status:string;detail:string}[];
-  dataset: {revision:number;records:number;source:string|null}|null;
+  dataset: {revision:number;records:number}|null;
 };
 
 export default function SystemHealth(){
@@ -25,6 +25,6 @@ export default function SystemHealth(){
     <div className="panel-head"><div><h2>AWS service checks</h2><p>{health?'Checked '+new Date(health.checkedAt).toLocaleString('en-PG',{timeZone:'Pacific/Port_Moresby'}):'Checks run on demand.'}</p></div><button className="btn" disabled={busy} onClick={refresh}>{busy?'Checking…':'Refresh health'}</button></div>
     {error&&<p role="alert">{error}</p>}
     {health&&<><div className="table-scroll"><table><thead><tr><th>Check</th><th>Status</th><th>Detail</th></tr></thead><tbody>{health.services.map(item=><tr key={item.name}><th scope="row">{item.name}</th><td>{item.status}</td><td>{item.detail}</td></tr>)}</tbody></table></div>
-    <p>{health.dataset?`Active dataset: ${health.dataset.source??'None'} · Revision ${health.dataset.revision} · ${health.dataset.records.toLocaleString()} stored employee records`:'Active dataset could not be checked.'}</p></>}
+    <p>{health.dataset?`Registry revision ${health.dataset.revision} · ${health.dataset.records.toLocaleString()} stored employee records`:'Active dataset could not be checked.'}</p></>}
   </section>;
 }

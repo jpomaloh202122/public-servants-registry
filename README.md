@@ -10,7 +10,7 @@ Next.js Government Payroll Office registry. Preserves the established screens, i
 - **Credentials:** Amplify SSR compute role and Secrets Manager. Runtime uses a restricted database user with table permissions; schema setup uses a separate owner credential. AWS keys and database passwords are not added to Amplify environment variables.
 - **History:** prior source snapshots remain in PostgreSQL and S3. Employee edits and their revision update commit in one transaction, with complete new employee edit events in `audit_events`. The dashboard holds the latest 100 events to keep metadata small.
 
-All approved RegistryUsers members currently have registry-wide read/write access. Agency-specific roles and a user-management screen are a later change. New source snapshots still require reconciliation of previous corrections and photo associations; they are not automatically merged across uploads. Session tokens expire after one hour; users then sign in again.
+Approved RegistryUsers members can view and maintain employee records. Source imports, original workbook downloads, payroll reconciliation and structured database exports additionally require the Cognito group `RegistrySourceManagers`. Assign this group only to designated source custodians. Members must sign in again after a group change. Agency-specific roles and a user-management screen are a later change. New source snapshots still require reconciliation of previous corrections and photo associations; they are not automatically merged across uploads. Session tokens expire after one hour; users then sign in again.
 
 ## Deploy the backend in SevisPNGSandbox
 

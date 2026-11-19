@@ -8,7 +8,7 @@ export async function GET(){
     (async()=>{
       const active=await config();
       const count=await env.DB.prepare('SELECT COUNT(*) AS n FROM employees WHERE dataset=?').bind(active.dataset).first<{n:number}>();
-      return {revision:active.revision,records:Number(count?.n??0),source:active.source?.source??null};
+      return {revision:active.revision,records:Number(count?.n??0)};
     })(),
     env.BUCKET.check(),
     (async()=>{

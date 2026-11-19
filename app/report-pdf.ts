@@ -14,5 +14,5 @@ export function makeManagementPdf(report:ManagementReport,sections:string[],asse
  autoTable(doc,{startY:y,head:[headers],body,margin:{top:44,bottom:17,left:12,right:12},styles:{font:'GPO',fontSize:headers.length>6?7:8,cellPadding:2,overflow:'linebreak',lineColor:[220,220,220],lineWidth:0.1},headStyles:{fillColor:[49,49,49],textColor:255,fontStyle:'bold'},alternateRowStyles:{fillColor:[247,246,242]},willDrawPage:()=>{decorate();}});
  y=(doc as any).lastAutoTable.finalY+10;
  }}
- const pages=doc.getNumberOfPages();for(let n=1;n<=pages;n++){doc.setPage(n);doc.setFont('GPO','normal');doc.setFontSize(7);doc.setTextColor(100,100,100);doc.text('Internal management use | Source: '+report.source+' | Prepared by '+report.preparedBy,12,202);doc.text(`${n} / ${pages}`,285,202,{align:'right'});}return doc;
+ const pages=doc.getNumberOfPages();for(let n=1;n<=pages;n++){doc.setPage(n);doc.setFont('GPO','normal');doc.setFontSize(7);doc.setTextColor(100,100,100);doc.text('Internal management use | Prepared by '+report.preparedBy,12,202);doc.text(`${n} / ${pages}`,285,202,{align:'right'});}return doc;
 }

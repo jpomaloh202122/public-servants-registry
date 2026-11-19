@@ -5,5 +5,5 @@ export const dynamic='force-dynamic';
 export default async function Page(){
  const user=await getChatGPTUser();
  if(!user)redirect('/login');
- return <RegistryApp displayName={user.displayName} email={user.email} signOutPath={chatGPTSignOutPath('/login')}/>;
+ return <RegistryApp canManageSources={user.canManageSources} displayName={user.displayName} email={user.email} signOutPath={chatGPTSignOutPath('/login')}/>;
 }

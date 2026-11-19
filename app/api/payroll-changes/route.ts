@@ -4,7 +4,7 @@ import {env} from '@/lib/aws-runtime';
 
 export async function GET(req:Request){
  const user=await getChatGPTUser();
- if(!user)return new Response('Unauthorized',{status:401});
+ if(!user)return new Response('Unauthorized',{status:401});if(!user.canManageSources)return new Response('Forbidden',{status:403});
  const headers={'Cache-Control':'private, no-store'};
  const current=await config();
  const previous=current.source?.previousDataset;

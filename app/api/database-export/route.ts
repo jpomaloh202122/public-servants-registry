@@ -4,7 +4,7 @@ import {config} from '../../server-registry';
 import {assessmentCTE,qualityWhere,effectiveEmployee,pngToday} from '../../quality';
 import {schema,sourceInsert,organisationInsert,employeeInsert,importGuide,type Engine} from '../../database-sql';
 export async function GET(req:Request){
- if(!await getChatGPTUser())return new Response('Sign in required',{status:401,headers:{'Cache-Control':'no-store'}});
+ const user=await getChatGPTUser();if(!user)return new Response('Sign in required',{status:401,headers:{'Cache-Control':'no-store'}});if(!user.canManageSources)return new Response('Forbidden',{status:403});
  const u=new URL(req.url),engine=u.searchParams.get('engine');
  if(u.searchParams.get('guide')==='1')return new Response(importGuide(),{headers:{'Content-Type':'text/plain;charset=utf-8','Content-Disposition':'attachment; filename="Registry_Database_Import_Guide.txt"','Cache-Control':'private,no-store'}});
  if(engine!=='mysql'&&engine!=='oracle')return new Response('Select MySQL or Oracle',{status:400});
