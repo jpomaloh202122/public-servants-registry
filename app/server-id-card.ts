@@ -111,7 +111,7 @@ export async function issueIdCard(input:{employeeNumber:string;revision:number;d
   env.DB.prepare('UPDATE registry SET payload=?,revision=revision+1 WHERE id=? AND revision=?')
    .bind(JSON.stringify(payload),CONFIG,input.revision).expectChanges(1),
   env.DB.prepare("UPDATE registry_id_cards SET state='superseded' WHERE employee_number=? AND state='issued'").bind(input.employeeNumber),
-  env.DB.prepare('INSERT INTO registry_id_cards(id,employee_number,state,verification_token,token_hash,record_hash,employee_sequence,issued_at,issued_by,payload) VALUES (?,?,?,?,?,?,?,?,?,?)')
+  env.DB.prepare('INSERT INTO registry_id_cards(id,employee_number,state,verification_token,token_hash,record_hash,employee_sequence,issued_at,issued_by,payload) VALUES (?,?,?,?,?,?,?,CAST(? AS timestamptz),?,?)')
    .bind(card.cardId,input.employeeNumber,'issued',token,hash(token),context.recordHash,context.sequence,
     card.issuedAt,user.userId,JSON.stringify({...card,qrDataUrl:''})),
   env.DB.prepare('INSERT INTO audit_events(id,created_at,actor,payload) VALUES (?,?,?,?)')

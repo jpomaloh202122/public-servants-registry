@@ -14,12 +14,13 @@ class Statement {
  constructor(sql,args=[]){this.sql=sql;this.args=args;}
  bind(...args){return new Statement(this.sql,args);}
  expectChanges(count){this.expected=count;return this;}
- async result(){let n=0;return db.query(this.sql.replace(/\?/g,()=>'$'+(++n)),this.args);}
+ // Data API binds strings as PostgreSQL text, unlike a driver that leaves types unspecified.
+ async result(){let n=0;return db.query(this.sql.replace(/\?/g,()=>{const value=this.args[n++];return typeof value==='string'?'CAST($'+n+' AS text)':'$'+n;}),this.args);}
  async first(){return (await this.result()).rows[0]??null;}
  async run(){const result=await this.result();if(this.expected!==undefined&&result.affectedRows!==this.expected)throw Error('Revision conflict');return result;}
 }
 const env={DB:{dialect:'postgres',prepare:sql=>new Statement(sql),batch:async statements=>{
- await db.exec('BEGIN');try{for(const [i,s] of statements.entries()){await s.run();if(context.failBatch&&i===2)throw Error('Forced rollback');}await db.exec('COMMIT');}catch(e){await db.exec('ROLLBACK');throw e;}
+ await db.exec('BEGIN');try{for(const [i,s] of statements.entries()){await s.run();if(context.failBatch&&i===2)throw Error('Forced rollback');}await db.exec('COMMIT');}catch(e){await db.exec('ROLLBACK');context.lastDbError=e.message;throw e;}
 }},BUCKET:{head:async()=>context.photoExists?{}:null}};
 const config=async()=>{const row=await new Statement("SELECT payload,revision FROM registry WHERE id='excel-config'").first();return {...JSON.parse(row.payload),revision:row.revision};};
 globalThis.__cardFixture={context,env,config};
@@ -60,7 +61,7 @@ try {
  assert.equal((await issue(card,{revision:0})).status,409);
  context.failBatch=true;assert.equal((await issue(card)).status,503);context.failBatch=false;
  assert.equal((await db.query('SELECT * FROM registry_id_cards')).rows.length,0,'Atomic failure leaves no issued card');
- response=await issue(card);assert.equal(response.status,200);const issued=await response.json();assert.equal(issued.status,'issued');
+ response=await issue(card);assert.equal(response.status,200,context.lastDbError);const issued=await response.json();assert.equal(issued.status,'issued');
  const token=issued.verificationUrl.split('/').pop();assert.match(token,/^[a-f0-9]{64}$/);
  assert.equal((await issue(card)).status,200,'Retry reuses committed issuance');
  assert.equal((await db.query('SELECT * FROM registry_id_cards')).rows.length,1);assert.equal((await db.query('SELECT * FROM audit_events')).rows.length,1);
