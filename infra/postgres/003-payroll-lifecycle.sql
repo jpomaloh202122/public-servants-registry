@@ -79,14 +79,25 @@ BEGIN
  AND EXISTS (SELECT 1 FROM public.employees e WHERE e.dataset=prior_dataset AND e.agency=p.key
    AND NOT EXISTS(SELECT 1 FROM public.employees f WHERE f.dataset=fresh_dataset AND f.number=e.number))
  ON CONFLICT(id) DO NOTHING;
+ -- Retain incomplete legacy records even when their organisation reference cannot be resolved.
+ INSERT INTO public.organisations(id,dataset,key,payload)
+ SELECT DISTINCT fresh_dataset||':retained-unknown:'||md5(p.agency),fresh_dataset,
+   'retained-unknown:'||md5(p.agency),
+   jsonb_build_object('id','retained-unknown:'||md5(p.agency),'code',p.agency,
+     'name','Unresolved previous organisation','type','Organisation')::text
+ FROM public.employees p WHERE p.dataset=prior_dataset
+ AND NOT EXISTS(SELECT 1 FROM public.organisations o WHERE o.dataset=prior_dataset AND o.key=p.agency)
+ AND NOT EXISTS(SELECT 1 FROM public.employees f WHERE f.dataset=fresh_dataset AND f.number=p.number)
+ ON CONFLICT(id) DO NOTHING;
  INSERT INTO public.employees(id,dataset,number,agency,status,search,ready,payload)
- SELECT fresh_dataset||':retained:'||p.number,fresh_dataset,p.number,'retained:'||md5((po.payload::jsonb-'id')::text),'Inactive',p.search,0,
-   (p.payload::jsonb||jsonb_build_object('agency','retained:'||md5((po.payload::jsonb-'id')::text),'status','Inactive','statusReviewed',true,
+ SELECT fresh_dataset||':retained:'||p.number,fresh_dataset,p.number,COALESCE('retained:'||md5((po.payload::jsonb-'id')::text),'retained-unknown:'||md5(p.agency)),'Inactive',p.search,0,
+   (p.payload::jsonb||jsonb_build_object('agency',COALESCE('retained:'||md5((po.payload::jsonb-'id')::text),'retained-unknown:'||md5(p.agency)),'status','Inactive','statusReviewed',true,
     'payrollAbsent',true,'statusReason','Not present in payroll cycle',
+    'sourceConflict',COALESCE((p.payload::jsonb->>'sourceConflict')::boolean,false) OR po.key IS NULL,
     'previousEmploymentStatus',COALESCE(p.payload::jsonb->>'previousEmploymentStatus',p.status),
     'missingSince',COALESCE(p.payload::jsonb->>'missingSince',NEW.payload::jsonb->'source'->>'asOf'),
     'lastPayrollDataset',COALESCE(p.payload::jsonb->>'lastPayrollDataset',prior_dataset)))::text
- FROM public.employees p JOIN public.organisations po ON po.dataset=prior_dataset AND po.key=p.agency WHERE p.dataset=prior_dataset
+ FROM public.employees p LEFT JOIN public.organisations po ON po.dataset=prior_dataset AND po.key=p.agency WHERE p.dataset=prior_dataset
  AND NOT EXISTS(SELECT 1 FROM public.employees f WHERE f.dataset=fresh_dataset AND f.number=p.number)
  ON CONFLICT(dataset,number) DO NOTHING;
  -- Business field comparison uses stable organisation identity instead of import-local keys.

@@ -102,6 +102,13 @@ try {
  const protectedEvent=await scalar("SELECT payload FROM registry_change_events WHERE employee_number='0002' ORDER BY seq DESC LIMIT 1");
  assert.ok(protectedEvent.payload.changedFields.includes('first'));
  assert.ok(protectedEvent.payload.sequence>0);
+ await employee('return','orphan','unknown-key');
+ await organisation('legacy','a','001','Agency A');
+ await employee('legacy','0002','a');
+ await activate('legacy');
+ const orphan=await scalar("SELECT status,payload::jsonb AS record FROM employees WHERE dataset='legacy' AND number='orphan'");
+ assert.equal(orphan.status,'Inactive');
+ assert.equal(orphan.record.sourceConflict,true);
  const target={url:'https://partner.example/webhook',signingSecret:'a'.repeat(64)};
  const event={event_id:'test-event',payload:{employeeNumber:'synthetic',credentialAction:'deactivate'}};
  let sent;
