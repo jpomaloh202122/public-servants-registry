@@ -83,3 +83,7 @@ Use the backend stack outputs to configure `.env.local`. Cognito cookies require
 - [RDS Data API](https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/data-api.html)
 
 SevisPass integration, high availability, capacity/load testing, agency permissions and production hardening remain separate implementation work.
+
+## Payroll lifecycle
+
+Full payroll snapshots now retain missing officers as Inactive and queue signed credential-change webhooks. Deploy the database triggers and dispatcher before activating another source. See [Payroll lifecycle and webhook deployment](docs/payroll-lifecycle-webhooks.md) for setup, partner configuration and acceptance.

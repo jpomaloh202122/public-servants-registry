@@ -7,4 +7,5 @@ const base={resourceArn,secretArn,database:process.env.DB_NAME||'registry'};
 // Data API executes one statement per call. Keep PL/pgSQL function intact.
 for(const sql of readFileSync('infra/postgres/001-schema.sql','utf8').split(';').filter(s=>s.trim()))await client.send(new ExecuteStatementCommand({...base,sql}));
 await client.send(new ExecuteStatementCommand({...base,sql:readFileSync('infra/postgres/002-valid-dob.sql','utf8')}));
+for(const sql of readFileSync('infra/postgres/003-payroll-lifecycle.sql','utf8').split('\n-- statement\n'))if(sql.trim())await client.send(new ExecuteStatementCommand({...base,sql}));
 console.log('PostgreSQL registry schema ready; existing records preserved.');

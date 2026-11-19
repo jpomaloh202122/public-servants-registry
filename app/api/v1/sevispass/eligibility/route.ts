@@ -45,7 +45,7 @@ export async function POST(request: Request) {
     if (!row) return reply({decision: 'not_found', ...context});
 
     const employee = effectiveEmployee(JSON.parse(row.payload) as Employee, current.source);
-    const excluded = employee.status === 'Terminated' || employee.status === 'Retired';
+    const excluded = employee.payrollAbsent === true || ['Inactive','Suspended','Terminated','Retired','Resigned','Deceased'].includes(employee.status);
     return reply({
       employeeNumber: number,
       decision: excluded ? 'ineligible' : 'pending_review',

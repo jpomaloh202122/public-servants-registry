@@ -31,7 +31,7 @@ try {
     verify:(value,settings)=>verifySevisPassToken(value,settings,key),
     lookup:(dataset,number)=>{
       assert.equal(dataset,'cycle');
-      return number==='000123'?{payload:JSON.stringify({number,first:'Synthetic',last:'Officer',gender:'F',dob:'1990-01-01',position:'Officer',agency:'agency',status:'Not provided',photo:'portraits/example',verified:true})}:null;
+      return number==='000123'?{payload:JSON.stringify({number,first:'Synthetic',last:'Officer',gender:'F',dob:'1990-01-01',position:'Officer',agency:'agency',status:globalThis.__sevispassFixture.status||'Not provided',photo:'portraits/example',verified:true})}:null;
     },
   };
   writeFileSync(join(dir,'fixture.mjs'),`
@@ -66,6 +66,12 @@ try {
   const missing=await (await POST(request('123'))).json();
   assert.equal(missing.decision,'not_found');
   assert.equal('employeeNumber' in missing,false);
+  for(const status of ['Inactive','Suspended','Terminated','Retired','Resigned','Deceased']){
+    globalThis.__sevispassFixture.status=status;
+    const denied=await (await POST(request('000123'))).json();
+    assert.equal(denied.decision,'ineligible');
+    assert.equal(denied.registryReady,false);
+  }
   console.log('SevisPass lookup tests passed.');
 } finally {
   rmSync(dir,{recursive:true,force:true});

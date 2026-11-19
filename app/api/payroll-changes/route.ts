@@ -8,7 +8,12 @@ export async function GET(req:Request){
  const headers={'Cache-Control':'private, no-store'};
  const current=await config();
  const previous=current.source?.previousDataset;
- if(!previous)return Response.json({available:false,changes:[],next:null},{headers});
+ let webhooks:any[]=[];
+ if(env.DB.dialect==='postgres'){
+  const installed=await env.DB.prepare("SELECT to_regclass('public.registry_webhook_deliveries') IS NOT NULL AS installed").first<{installed:boolean}>();
+  if(installed?.installed)webhooks=(await env.DB.prepare("SELECT destination,COUNT(*) FILTER (WHERE delivered_at IS NULL) AS pending,COUNT(*) FILTER (WHERE delivered_at IS NULL AND last_error IS NOT NULL) AS retrying,MAX(delivered_at)::text AS last_delivered FROM registry_webhook_deliveries GROUP BY destination").all()).results;
+ }
+ if(!previous)return Response.json({available:false,changes:[],next:null,webhooks},{headers});
  if(env.DB.dialect!=='postgres')return Response.json({error:'Payroll comparison requires PostgreSQL.'},{status:503,headers});
  const cursor=new URL(req.url).searchParams.get('after')??'';
  const query=`WITH prior AS (
@@ -20,17 +25,17 @@ export async function GET(req:Request){
    CASE WHEN status='Not provided' AND NOT COALESCE((payload::jsonb->>'statusReviewed')::boolean,false) THEN 'Active' ELSE status END AS status
   FROM employees WHERE dataset=? AND number>?
  )
- SELECT p.number,COALESCE(po.payload::jsonb->>'name',p.agency) AS previous_agency,COALESCE(fo.payload::jsonb->>'name',f.agency) AS current_agency,
+ SELECT COALESCE(p.number,f.number) AS number,COALESCE(po.payload::jsonb->>'name',p.agency) AS previous_agency,COALESCE(fo.payload::jsonb->>'name',f.agency) AS current_agency,
   p.record->>'position' AS previous_position,f.record->>'position' AS current_position,
   p.status AS previous_status,f.status AS current_status
- FROM prior p LEFT JOIN fresh f ON p.number=f.number
+ FROM prior p FULL OUTER JOIN fresh f ON p.number=f.number
  LEFT JOIN organisations po ON po.dataset=p.dataset AND po.key=p.agency
  LEFT JOIN organisations fo ON fo.dataset=f.dataset AND fo.key=f.agency
- WHERE f.number IS NULL
+ WHERE f.number IS NULL OR p.number IS NULL
   OR (po.payload::jsonb->>'code',po.payload::jsonb->>'name') IS DISTINCT FROM (fo.payload::jsonb->>'code',fo.payload::jsonb->>'name')
   OR p.record->>'position' IS DISTINCT FROM f.record->>'position'
   OR p.status IS DISTINCT FROM f.status
- ORDER BY p.number LIMIT 51`;
+ ORDER BY COALESCE(p.number,f.number) LIMIT 51`;
  const {results}=await env.DB.prepare(query).bind(previous,cursor,current.dataset,cursor).all<{number:string}>();
- return Response.json({available:true,revision:current.revision,changes:results.slice(0,50),next:results.length>50?results[49].number:null},{headers});
+ return Response.json({available:true,revision:current.revision,changes:results.slice(0,50),webhooks,next:results.length>50?results[49].number:null},{headers});
 }

@@ -1,0 +1,91 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Durable registry lifecycle webhook dispatcher
+Parameters:
+  ClusterArn: {Type: String}
+  DatabaseSecretArn: {Type: String}
+  ArtifactBucket: {Type: String}
+  ArtifactKey: {Type: String}
+Resources:
+  Configuration:
+    Type: AWS::SecretsManager::Secret
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      Description: Registry webhook destinations with separate signingSecret values. Empty until partner URLs are configured.
+      SecretString: '{}'
+  Logs:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${AWS::StackName}-dispatcher'
+      RetentionInDays: 30
+  Role:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: {Service: lambda.amazonaws.com}
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: Dispatch
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: rds-data:ExecuteStatement
+                Resource: !Ref ClusterArn
+              - Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource: [!Ref DatabaseSecretArn, !Ref Configuration]
+              - Effect: Allow
+                Action: [logs:CreateLogStream, logs:PutLogEvents]
+                Resource: !GetAtt Logs.Arn
+  Dispatcher:
+    Type: AWS::Lambda::Function
+    DependsOn: Logs
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-dispatcher'
+      Runtime: nodejs22.x
+      Handler: worker.handler
+      Role: !GetAtt Role.Arn
+      Timeout: 120
+      MemorySize: 256
+      ReservedConcurrentExecutions: 1
+      Code: {S3Bucket: !Ref ArtifactBucket, S3Key: !Ref ArtifactKey}
+      Environment:
+        Variables:
+          DB_CLUSTER_ARN: !Ref ClusterArn
+          DB_SECRET_ARN: !Ref DatabaseSecretArn
+          WEBHOOK_SECRET_ARN: !Ref Configuration
+  ScheduleRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: {Service: scheduler.amazonaws.com}
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals: {'aws:SourceAccount': !Ref 'AWS::AccountId'}
+      Policies:
+        - PolicyName: InvokeDispatcher
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: lambda:InvokeFunction
+                Resource: !GetAtt Dispatcher.Arn
+  Schedule:
+    Type: AWS::Scheduler::Schedule
+    Properties:
+      ScheduleExpression: rate(1 minute)
+      FlexibleTimeWindow: {Mode: 'OFF'}
+      Target:
+        Arn: !GetAtt Dispatcher.Arn
+        RoleArn: !GetAtt ScheduleRole.Arn
+        RetryPolicy: {MaximumRetryAttempts: 2, MaximumEventAgeInSeconds: 300}
+Outputs:
+  WebhookConfigurationSecret: {Value: !Ref Configuration}
+  DispatcherFunction: {Value: !Ref Dispatcher}

@@ -20,3 +20,5 @@
 .sidebar .brand{display:block;flex:none;padding:0 0 20px}
 .sidebar .brand img{display:block;width:100%;height:auto;max-height:none;object-fit:contain;margin:0 0 8px}
 .login-brand img{width:min(160px,40%);height:auto;flex:none;object-fit:contain}
+
+.status.inactive,.status.resigned,.status.deceased{background:#fce8e6;color:#8b231e}.status.inactive i,.status.resigned i,.status.deceased i{background:#8b231e}

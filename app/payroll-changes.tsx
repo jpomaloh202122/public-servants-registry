@@ -1,9 +1,9 @@
 'use client';
 import {useEffect,useState} from 'react';
 
-type Change={number:string;previous_agency:string;current_agency:string|null;previous_position:string;current_position:string|null;previous_status:string;current_status:string|null};
+type Change={number:string;previous_agency:string|null;current_agency:string|null;previous_position:string|null;current_position:string|null;previous_status:string|null;current_status:string|null};
 export default function PayrollChanges({revision,onConfirmed}:{revision:number;onConfirmed:()=>void}){
- const [result,setResult]=useState<{available:boolean;changes:Change[];next:string|null}|null>(null);
+ const [result,setResult]=useState<{available:boolean;changes:Change[];next:string|null;webhooks?:{destination:string;pending:number;retrying:number;last_delivered:string|null}[]}|null>(null);
  const [error,setError]=useState('');
  const [message,setMessage]=useState('');
  const [busy,setBusy]=useState(false);
@@ -25,10 +25,11 @@ export default function PayrollChanges({revision,onConfirmed}:{revision:number;o
    setMessage('Current payroll activity confirmed. Photo and record verification are tracked separately.');onConfirmed();
   }catch(e){setError((e as Error).message);}finally{setBusy(false);}
  }
- return <section className="panel"><div className="panel-head"><div><h2>Payroll cycle changes</h2><p>Review changes before updating PSPASS. An absent record requires follow-up to establish the reason.</p></div><button className="btn" disabled={busy} onClick={confirm}>Confirm current payroll activity</button></div>
+ return <section className="panel"><div className="panel-head"><div><h2>Payroll cycle changes</h2><p>Missing employees are retained as Inactive. Credential change notifications are queued for SevisPass and SevisWallet. Follow up to confirm the reason.</p></div><button className="btn" disabled={busy} onClick={confirm}>Confirm current payroll activity</button></div>
  {message&&<p role="status">{message}</p>}{error&&<p role="alert">{error}</p>}
+ {result?.webhooks?.map(w=><p key={w.destination}>{w.destination}: {w.pending} notifications pending · {w.retrying} retrying · Last acknowledged {w.last_delivered??'none'}</p>)}
  {result&&!result.available&&<p>Cycle comparison starts with the next source activation.</p>}
- {result?.available&&<><div className="table-scroll"><table><thead><tr><th>Employee number</th><th>Payroll status</th><th>Position</th><th>Organisation</th></tr></thead><tbody>{result.changes.map(c=><tr key={c.number}><td>{c.number}</td><td>{c.current_status===null?'Missing from current cycle — review':c.previous_status+' → '+c.current_status}</td><td>{c.previous_position} → {c.current_position??'—'}</td><td>{c.previous_agency} → {c.current_agency??'—'}</td></tr>)}</tbody></table></div>
+ {result?.available&&<><div className="table-scroll"><table><thead><tr><th>Employee number</th><th>Payroll status</th><th>Position</th><th>Organisation</th></tr></thead><tbody>{result.changes.map(c=><tr key={c.number}><td>{c.number}</td><td>{c.current_status===null?'Missing from current cycle — review':c.previous_status===null?'New in payroll cycle → '+c.current_status:c.previous_status+' → '+c.current_status}</td><td>{c.previous_position} → {c.current_position??'—'}</td><td>{c.previous_agency} → {c.current_agency??'—'}</td></tr>)}</tbody></table></div>
  {!result.changes.length&&<p>No payroll status, position or organisation changes found.</p>}{result.next&&<button className="btn" disabled={busy} onClick={()=>load(result.next!)}>Next changes</button>}<button className="btn" disabled={busy} onClick={()=>load()}>Refresh changes</button></>}
  </section>;
 }

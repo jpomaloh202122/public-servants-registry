@@ -1,9 +1,9 @@
 import {dobIssue} from './quality';
 export type Agency={id:string;code:string;name:string;type:string};
-export type Employee={id:string;number:string;first:string;last:string;gender:string;dob:string;position:string;agency:string;status:string;photo:string;verified:boolean;updated:string;sourceRow?:number;sourceUnit?:string;sourceConflict?:boolean;statusReviewed?:boolean;sourceStatus?:string};
+export type Employee={id:string;number:string;first:string;last:string;gender:string;dob:string;position:string;agency:string;status:string;photo:string;verified:boolean;updated:string;sourceRow?:number;sourceUnit?:string;sourceConflict?:boolean;statusReviewed?:boolean;sourceStatus?:string;payrollAbsent?:boolean;statusReason?:string;missingSince?:string;lastPayrollDataset?:string;previousEmploymentStatus?:string};
 export type Event={id:string;time:string;action:string;detail:string;actor:string};
 export type Data={agencies:Agency[];employees:Employee[];events:Event[];sample:boolean};
-export const statuses=['Active','On leave','Suspended','Terminated','Retired','Not provided'];
+export const statuses=['Active','On leave','Inactive','Suspended','Terminated','Retired','Resigned','Deceased','Not provided'];
 export function normaliseGender(value:string){
  const trimmed=value.trim();
  switch(trimmed.toUpperCase()){
