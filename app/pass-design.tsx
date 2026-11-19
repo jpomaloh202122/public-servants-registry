@@ -1,20 +1,21 @@
+'use client';
+import {useEffect,useState} from 'react';
 import type {IdCard} from './id-card';
+import {renderPass} from './pass-renderer';
 import styles from './pass-design.module.css';
 
 export function PassDesign({card,wallet}:{card:IdCard;wallet:boolean}) {
- const fields=[['Department',card.agency],['Position',card.position],['Gender',card.gender],['Employee Number',card.employeeNumber]];
- return <section className={wallet?styles.wallet:styles.pass} aria-label={wallet?'Digital ID preview':'Physical pass preview'}>
-  {wallet&&<div className={styles.walletBrand}>SevisWallet</div>}
-  <header className={styles.header}>
-   <img src="/png-state-emblem.png" alt=""/>
-   <div>GOVERNMENT OF PAPUA NEW GUINEA</div>
-   <h3>{wallet?'Public Servant Digital ID':'Public Servant ID Pass'}</h3>
-   <span>{card.status==='issued'?'Issued':'Specimen'}</span>
-  </header>
-  <div className={styles.identity}>
-   <img className={styles.photo} src={card.photoUrl} alt={'Verified portrait of '+card.name}/>
-   <div className={styles.details}><h4>{card.name}</h4><dl>{fields.map(([label,value])=><div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl></div>
-   <img className={styles.qr} src={card.qrDataUrl} alt="Scan to check ID status"/>
-  </div>
- </section>;
+ const [result,setResult]=useState<{card:IdCard;wallet:boolean;image?:string;error?:string}>();
+ useEffect(()=>{
+  let active=true;
+  renderPass(card,wallet?'digital':'physical')
+   .then(canvas=>{if(active)setResult({card,wallet,image:canvas.toDataURL('image/png')});})
+   .catch(error=>{if(active)setResult({card,wallet,error:error instanceof Error?error.message:'Unable to load card artwork.'});});
+  return()=>{active=false;};
+ },[card,wallet]);
+ if(result?.card!==card||result.wallet!==wallet)return <p role="status">Preparing ID…</p>;
+ if(result.error)return <p role="alert">{result.error}</p>;
+ const title=wallet?'SevisWallet Public Servant Digital ID':'Public Servant ID Pass';
+ return <img className={wallet?styles.digital:styles.physical} src={result.image}
+  alt={title+'. '+card.status+'. '+card.name+'. Department: '+card.agency+'. Position: '+card.position+'. Gender: '+card.gender+'. Employee Number: '+card.employeeNumber}/>;
 }
