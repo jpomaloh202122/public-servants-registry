@@ -55,9 +55,9 @@ export default function IdCardPreview({number,onClose,onReview,onIssued}:{number
   try {
    const current=await readCard(number);
    const [logo,font,bold,lib]=await Promise.all([
-    asset('/gpo-emblem-transparent.png'),asset('/report-fonts/DejaVuSans.ttf'),asset('/report-fonts/DejaVuSans-Bold.ttf'),import('./id-card-pdf')
+    asset('/png-state-emblem.jpg'),asset('/report-fonts/DejaVuSans.ttf'),asset('/report-fonts/DejaVuSans-Bold.ttf'),import('./id-card-pdf')
    ]);
-   const pdf=lib.makeIdCardPdf(current,{logo:'data:image/png;base64,'+logo,font,bold});
+   const pdf=lib.makeIdCardPdf(current,{logo:'data:image/jpeg;base64,'+logo,font,bold});
    const latest=await readCard(number);
    if(latest.datasetId!==current.datasetId||latest.revision!==current.revision||latest.cardId!==current.cardId)
     throw Error('The registry changed while preparing the PDF. Recheck and retry.');
@@ -67,7 +67,7 @@ export default function IdCardPreview({number,onClose,onReview,onIssued}:{number
   finally{setBusy('');}
  }
  return <dialog ref={dialog} className="id-card-dialog" aria-labelledby="id-card-title" onCancel={event=>{event.preventDefault();onClose();}}>
-  <div className="id-card-heading"><div><div className="eyebrow">GOVERNMENT PAYROLL OFFICE</div><h2 id="id-card-title">Public Servant Digital ID</h2></div>
+  <div className="id-card-heading"><div><div className="eyebrow">GOVERNMENT OF PNG PUBLIC SERVANTS REGISTRY SYSTEM</div><h2 id="id-card-title">Public Servant Digital ID</h2></div>
    <button className="btn icon" aria-label="Close ID card preview" onClick={onClose}><X size={20}/></button></div>
   <p className="id-card-note">{card?.status==='issued'?'Issued in the registry. Scan the QR code to check the current ID record.':
    'Review the saved employee checks, then approve issuance. SevisWallet credential delivery follows the partner integration.'}</p>
@@ -77,7 +77,7 @@ export default function IdCardPreview({number,onClose,onReview,onIssued}:{number
     <section aria-label="Public Servant ID card" className="ps-card-template">
      <header><span>GOVERNMENT OF PAPUA NEW GUINEA</span><div><strong>Public Servant Digital ID</strong><b>{card.status.toUpperCase()}</b></div></header>
      <div className="ps-card-template-body">
-      <img className="ps-card-watermark" src="/gpo-emblem-transparent.png" alt=""/>
+      <img className="ps-card-watermark" src="/png-state-emblem.jpg" alt=""/>
       <div className="ps-card-fields"><span>FULL NAME</span><h3 title={card.name}>{card.name}</h3>
        <span>DEPARTMENT</span><strong title={card.agency}>{card.agency}</strong>
        <span>POSITION</span><strong title={card.position}>{card.position}</strong>

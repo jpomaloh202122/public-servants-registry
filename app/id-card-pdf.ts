@@ -5,7 +5,7 @@ export function makeIdCardPdf(card:IdCard,assets:IdCardAssets) {
  const doc=new jsPDF({orientation:'landscape',unit:'mm',format:[86,54],compress:true});
  doc.addFileToVFS('Card.ttf',assets.font);doc.addFileToVFS('Card-Bold.ttf',assets.bold);
  doc.addFont('Card.ttf','Card','normal');doc.addFont('Card-Bold.ttf','Card','bold');
- doc.setProperties({title:'Public Servant Digital ID '+card.employeeNumber,author:'Government Payroll Office',
+ doc.setProperties({title:'Public Servant Digital ID '+card.employeeNumber,author:'Government of PNG Public Servants Registry System',
   subject:card.status==='issued'?'Registry-issued Public Servant ID':'Card design preview'});
  const text=(value:string,x:number,y:number,size:number,bold=false)=>{
   doc.setFont('Card',bold?'bold':'normal');doc.setFontSize(size);doc.text(value,x,y);
@@ -21,7 +21,7 @@ export function makeIdCardPdf(card:IdCard,assets:IdCardAssets) {
  }
  doc.setFillColor(255,252,245);doc.rect(0,0,86,54,'F');
  doc.saveGraphicsState();doc.setGState(new GState({opacity:0.09}));
- doc.addImage(assets.logo,'PNG',12.5,12,49,33);
+ doc.addImage(assets.logo,assets.logo.startsWith('data:image/jpeg')?'JPEG':'PNG',12.5,12,49,33);
  doc.restoreGraphicsState();
  doc.setFillColor(59,35,44);doc.rect(0,0,86,10.8,'F');
  doc.setTextColor(237,187,78);text('GOVERNMENT OF PAPUA NEW GUINEA',3.5,3.5,5.3,true);

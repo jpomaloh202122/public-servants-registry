@@ -65,3 +65,5 @@
 .card-verification dd{font-size:18px;font-weight:700;margin:4px 0 0;overflow-wrap:anywhere}
 .verification-time{color:#626d70;font-size:13px}
 @media(max-width:760px){.id-card-dialog{padding:16px}.id-card-board{padding:8px}.id-card-buttons .btn{flex:1 1 auto}.card-evidence{align-items:flex-start}}
+
+.brand{align-items:center}.brand img{object-fit:contain;background:white;border-radius:5px;padding:3px}.brand>div{line-height:1.35;min-width:0}.brand>div>span{display:block;font-size:11px}.brand strong{display:block;font-size:13px}.issued-message{padding:20px}.issued-card-id{font-size:10px;max-width:170px;overflow-wrap:anywhere}.metrics{grid-template-columns:repeat(auto-fit,minmax(180px,1fr))}

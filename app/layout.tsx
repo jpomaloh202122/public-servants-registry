@@ -2,11 +2,11 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Public Servant Registry | Government Payroll Office",
+  title: "Government of PNG Public Servants Registry System",
   description: "Private employee registry and public service reporting.",
   icons: {
-    icon: "/gpo-icon-transparent.png",
-    shortcut: "/gpo-icon-transparent.png",
+    icon: "/png-state-emblem.jpg",
+    shortcut: "/png-state-emblem.jpg",
   },
 };
 

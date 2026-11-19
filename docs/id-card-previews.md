@@ -1,6 +1,6 @@
 # Public Servant digital IDs
 
-The supplied landscape template is used for the on-screen card and a one-page 86 × 54 mm PDF. It prints full name, department, position, gender and exact Employee Number, plus the GPO watermark and a working verification QR. No portrait is printed in this template. The saved portrait is shown separately as private review evidence. Leading zeros are retained.
+The supplied landscape template is used for the on-screen card and a one-page 86 × 54 mm PDF. It prints full name, department, position, gender and exact Employee Number, plus the supplied PNG state emblem watermark and a working verification QR. No portrait is printed in this template. The saved portrait is shown separately as private review evidence. Leading zeros are retained.
 
 Every employee row has a card button. Ineligible records display their blocking checks, with a link back to the employee editor. Uploading a photo alone does not verify the photo, approve the record or issue a card. Existing readiness rules still apply: active payroll, no absence flag, required fields, DOB and age checks, verified saved portrait, no source conflicts, and a complete agency reference. S3 is checked for the portrait's existence.
 
@@ -23,3 +23,9 @@ For a disk-constrained CloudShell, run `bash scripts/setup-issued-cards.sh` from
 `AWS_REGION=ap-southeast-2 node scripts/check-id-card-readiness.mjs` is a read-only, dependency-free diagnostic for Jessy Sekere and Joshua Pomaloh. Other exact full names may be supplied as separate arguments. It prints identifiers and checks, not DOB, photo bytes, tokens or passwords. Multiple name matches are not guessed. Latest issuance state alone is not proof of current validity; the live verification result performs that check.
 
 Run npm run test:id-cards, npm run typecheck and the production build. The tests exercise real PostgreSQL migrations using PGlite, authenticated lookup, detailed readiness failures, approval, transaction rollback, idempotency, QR decoding, public field limits, payroll changes, return-to-payroll invalidation, replacement, revocation, Unicode and PDF layout bounds. Test staff-only preview, issuing and scanning with a synthetic officer after deployment before issuing real IDs.
+
+## Issued ID overview and register
+
+Overview includes a clickable Issued Public Servant IDs total, with a matching Issued IDs navigation item. The staff-only GET /api/id-cards endpoint supports summary=1 or paginated listing with query (name or Employee Number) and page. The list uses 20 rows per page, bound and escaped search values, and an explicit field projection excluding verification tokens, hashes and private review evidence. Search is case-insensitive substring matching.
+
+The total counts current recorded issuances with state=issued, one per Employee Number, excluding superseded and revoked cards. It is not a count of currently valid credentials: payroll or identity changes can require replacement. Open card performs the existing live readiness/issuance checks. Opening the list does not scan all payroll records or generate QR codes. No new schema migration is required. The application identity is Government of PNG Public Servants Registry System; the supplied emblem is used in the sidebar, login, favicon, verification page, PDF reports and card watermark.

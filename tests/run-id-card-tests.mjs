@@ -17,6 +17,7 @@ class Statement {
  // Data API binds strings as PostgreSQL text, unlike a driver that leaves types unspecified.
  async result(){let n=0;return db.query(this.sql.replace(/\?/g,()=>{const value=this.args[n++];return typeof value==='string'?'CAST($'+n+' AS text)':'$'+n;}),this.args);}
  async first(){return (await this.result()).rows[0]??null;}
+ async all(){return {results:(await this.result()).rows};}
  async run(){const result=await this.result();if(this.expected!==undefined&&result.affectedRows!==this.expected)throw Error('Revision conflict');return result;}
 }
 const env={DB:{dialect:'postgres',prepare:sql=>new Statement(sql),batch:async statements=>{
@@ -26,9 +27,9 @@ const config=async()=>{const row=await new Statement("SELECT payload,revision FR
 globalThis.__cardFixture={context,env,config};
 process.env.APP_URL='https://registry.example';
 try {
- for(const [path,name] of [['app/model.ts','model'],['app/quality.ts','quality'],['app/quality-postgres.ts','quality-postgres'],['app/id-card.ts','id-card'],['app/id-card-pdf.ts','id-card-pdf'],['app/server-id-card.ts','server-id-card'],['app/api/id-card/route.ts','route']]){
+ for(const [path,name] of [['app/model.ts','model'],['app/quality.ts','quality'],['app/quality-postgres.ts','quality-postgres'],['app/id-card.ts','id-card'],['app/id-card-pdf.ts','id-card-pdf'],['app/server-id-card.ts','server-id-card'],['app/server-issued-cards.ts','server-issued-cards'],['app/api/id-cards/route.ts','list-route'],['app/api/id-card/route.ts','route']]){
   let source=readFileSync(path,'utf8').replace(/from '\.\/([^']+)'/g,"from './$1.mjs'");
-  for(const name of ['server-id-card'])source=source.replaceAll("'../../"+name+"'","'./"+name+".mjs'");
+  for(const name of ['server-id-card','server-issued-cards'])source=source.replaceAll("'../../"+name+"'","'./"+name+".mjs'");
   source=source.replaceAll("'@/lib/aws-runtime'","'./runtime.mjs'").replaceAll("'../../chatgpt-auth'","'./runtime.mjs'").replaceAll("'./server-registry.mjs'","'./runtime.mjs'");
   writeFileSync(join(dir,name+'.mjs'),ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText);
  }
@@ -42,14 +43,17 @@ try {
  await db.query("UPDATE registry SET payload=$1,revision=12 WHERE id='excel-config'",[JSON.stringify({dataset:'cycle',source:{asOf:'2026-11-19'},events:[]})]);
  const setEmployee=async patch=>{const e={...employee,...patch};await db.query("UPDATE employees SET payload=$1,status=$2 WHERE number='000123'",[JSON.stringify(e),e.status]);};
  const {GET,POST}=await import(pathToFileURL(join(dir,'route.mjs')));
+ const {GET:listCards}=await import(pathToFileURL(join(dir,'list-route.mjs')));
+ const listRequest=(query='')=>new Request('https://registry.example/api/id-cards'+query);
  const {verifyIdCard}=await import(pathToFileURL(join(dir,'server-id-card.mjs')));
  const request=number=>new Request('https://registry.example/api/id-card?'+new URLSearchParams({employeeNumber:number}));
  const issue=async(card,patch={},origin='https://registry.example')=>POST(new Request('https://registry.example/api/id-card',{method:'POST',headers:{'content-type':'application/json',origin},body:JSON.stringify({employeeNumber:'000123',datasetId:card.datasetId,revision:card.revision,confirmIssue:true,...patch})}));
- context.user=null;assert.equal((await GET(request('000123'))).status,401);
+ context.user=null;assert.equal((await GET(request('000123'))).status,401);assert.equal((await listCards(listRequest())).status,401);
  context.user={userId:'issuer',displayName:'Test Issuer'};
  assert.equal((await GET(request(' 000123'))).status,400);assert.equal((await GET(request('123'))).status,404);
  let response=await GET(request('000123'));assert.equal(response.status,200);
- let card=await response.json();assert.equal(card.status,'preview');assert.equal(card.gender,'Female');assert.equal('dob' in card,false);
+ let card=await response.json();
+ assert.equal((await (await listCards(listRequest('?summary=1'))).json()).issued,0);assert.equal(card.status,'preview');assert.equal(card.gender,'Female');assert.equal('dob' in card,false);
  assert.equal(response.headers.get('Cache-Control'),'private, no-store');
  for(const patch of [{number:'wrong-number'},{status:'Inactive'},{status:'Suspended'},{status:'Deceased'},{payrollAbsent:true},{verified:false},{sourceConflict:true},{photo:''},{gender:''},{dob:'2050-01-01'},{position:''}]){
   await setEmployee(patch);response=await GET(request('000123'));assert.equal(response.status,409,JSON.stringify(patch));assert.ok((await response.json()).checks.length);
@@ -62,6 +66,12 @@ try {
  context.failBatch=true;assert.equal((await issue(card)).status,503);context.failBatch=false;
  assert.equal((await db.query('SELECT * FROM registry_id_cards')).rows.length,0,'Atomic failure leaves no issued card');
  response=await issue(card);assert.equal(response.status,200,context.lastDbError);const issued=await response.json();assert.equal(issued.status,'issued');
+ let list=await (await listCards(listRequest())).json();assert.equal(list.issued,1);assert.equal(list.cards.length,1);assert.equal(list.cards[0].employeeNumber,'000123');
+ assert.deepEqual(Object.keys(list.cards[0]).sort(),['id','employeeNumber','issuedAt','name','agency','position','gender'].sort());
+ assert.equal((await (await listCards(listRequest('?query=SAMPLE'))).json()).matched,1);
+ assert.equal((await (await listCards(listRequest('?query=000123'))).json()).matched,1);
+ assert.equal((await (await listCards(listRequest('?query=%25'))).json()).matched,0,'Search wildcard is escaped');
+ assert.equal((await (await listCards(listRequest('?page=1'))).json()).cards.length,0);
  const token=issued.verificationUrl.split('/').pop();assert.match(token,/^[a-f0-9]{64}$/);
  assert.equal((await issue(card)).status,200,'Retry reuses committed issuance');
  assert.equal((await db.query('SELECT * FROM registry_id_cards')).rows.length,1);assert.equal((await db.query('SELECT * FROM audit_events')).rows.length,1);
@@ -74,16 +84,20 @@ try {
  await setEmployee({});assert.equal((await verifyIdCard(token)).status,'changed','Returning to payroll must not reactivate old ID');
  card=await (await GET(request('000123'))).json();assert.equal(card.needsReplacement,true);
  const replacement=await (await issue(card)).json();assert.equal((await verifyIdCard(token)).status,'superseded');
+ list=await (await listCards(listRequest())).json();assert.equal(list.issued,1,'Superseded ID excluded');assert.equal(list.cards[0].id,replacement.cardId);
  const replacementToken=replacement.verificationUrl.split('/').pop();assert.equal((await verifyIdCard(replacementToken)).status,'valid');
  await setEmployee({position:'Manager'});assert.equal((await verifyIdCard(replacementToken)).status,'changed');
  await db.query("UPDATE registry_id_cards SET state='revoked' WHERE id=$1",[replacement.cardId]);assert.equal((await verifyIdCard(replacementToken)).status,'revoked');
+ assert.equal((await (await listCards(listRequest())).json()).issued,0,'Revoked ID excluded');
  const {makeIdCardPdf}=await import(pathToFileURL(join(dir,'id-card-pdf.mjs')));
  const QRCode=(await import('qrcode')).default;
  const sample={...issued,status:'sample',verificationUrl:'https://main.d2p2kldeb52a64.amplifyapp.com/verify/preview',qrDataUrl:await QRCode.toDataURL('https://main.d2p2kldeb52a64.amplifyapp.com/verify/preview',{margin:4,width:360})};
- const assets={logo:'data:image/png;base64,'+readFileSync('public/gpo-emblem-transparent.png').toString('base64'),font:readFileSync('public/report-fonts/DejaVuSans.ttf').toString('base64'),bold:readFileSync('public/report-fonts/DejaVuSans-Bold.ttf').toString('base64')};
+ const assets={logo:'data:image/jpeg;base64,'+readFileSync('public/png-state-emblem.jpg').toString('base64'),font:readFileSync('public/report-fonts/DejaVuSans.ttf').toString('base64'),bold:readFileSync('public/report-fonts/DejaVuSans-Bold.ttf').toString('base64')};
  const pdf=makeIdCardPdf(sample,assets);assert.equal(pdf.getNumberOfPages(),1);assert.equal(pdf.internal.pageSize.getWidth(),86);assert.equal(pdf.internal.pageSize.getHeight(),54);
  assert.equal(makeIdCardPdf({...sample,name:'Émilie Example'},assets).getNumberOfPages(),1);
  assert.throws(()=>makeIdCardPdf({...sample,name:'Overlong name '.repeat(200)},assets),/too long/);
  writeFileSync('work/Public_Servant_ID_Card_Sample.pdf',Buffer.from(pdf.output('arraybuffer')));
- console.log('ID card checks passed: readiness diagnostics, exact identifiers, approval, atomic rollback, idempotent issuance, QR decoding, public field limits, lifecycle invalidation, replacement/revocation and template PDF.');
+ await db.exec('DROP TABLE registry_id_cards');
+ assert.equal((await (await listCards(listRequest())).json()).installed,false,'Missing setup has a clear empty state');
+ console.log('ID card checks passed: readiness diagnostics, exact identifiers, approval, atomic rollback, idempotent issuance, QR decoding, authenticated issued-ID totals/search/pagination, public field limits, lifecycle invalidation, replacement/revocation and template PDF.');
 } finally {delete globalThis.__cardFixture;await db.close();rmSync(dir,{recursive:true,force:true});}
