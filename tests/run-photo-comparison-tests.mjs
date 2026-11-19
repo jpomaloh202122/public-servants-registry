@@ -17,7 +17,7 @@ try{
  export class CardProblem extends Error {}
  export class DetectFacesCommand {constructor(input){this.input=input;}}
  export class CompareFacesCommand extends DetectFacesCommand {}
- export class RekognitionClient {async send(cmd){globalThis.pilot.calls++;return cmd instanceof CompareFacesCommand?{FaceMatches:[{Similarity:globalThis.pilot.score}]}:{FaceDetails:Array(globalThis.pilot.faces).fill({})};}}
+ export class RekognitionClient {async send(cmd){globalThis.pilot.calls++;if(cmd instanceof CompareFacesCommand&&cmd.input.SimilarityThreshold!==0)throw Error('Low scores excluded');return cmd instanceof CompareFacesCommand?{FaceMatches:[{Similarity:globalThis.pilot.score}]}:{FaceDetails:Array(globalThis.pilot.faces).fill({})};}}
  `);
  process.env.APP_URL='https://test.example';process.env.REGISTRY_AWS_REGION='ap-southeast-2';process.env.S3_BUCKET='test';
  const db=new Map(),token='a'.repeat(64);
@@ -29,14 +29,25 @@ try{
  const {POST}=await import(pathToFileURL(join(temp,'route.mjs')));
  const img=await sharp({create:{width:90,height:120,channels:3,background:'white'}}).jpeg().toBuffer();
  const send=(claim='001',extra={})=>POST(new Request(process.env.APP_URL,{method:'POST',headers:{origin:process.env.APP_URL,'x-check-purpose':'ID presentation','x-pilot-consent':'yes','x-registry-claim':encodeURIComponent(claim),...extra},body:img}));
- const confirm=id=>POST(new Request(process.env.APP_URL,{method:'POST',headers:{origin:process.env.APP_URL,'content-type':'application/json'},body:JSON.stringify({reviewId:id})}));
+ const confirm=(id,fields={})=>POST(new Request(process.env.APP_URL,{method:'POST',headers:{origin:process.env.APP_URL,'content-type':'application/json'},body:JSON.stringify({reviewId:id,...fields})}));
  assert.equal((await send()).status,401);
  p.user={userId:'officer',canComparePhotos:false};assert.equal((await send()).status,403);
  p.user.canComparePhotos=true;assert.equal((await send('001',{origin:'https://other.example'})).status,403);
  assert.equal((await send('001',{'x-pilot-consent':'no'})).status,400);
  assert.equal((await send('https://other.example/verify/'+token)).status,400);assert.equal(p.calls,0);
  p.faces=2;assert.deepEqual(await (await send()).json(),{manual:true});
- p.faces=1;p.score=98;assert.deepEqual(await (await send()).json(),{manual:true});
+ p.faces=1;
+ for(const score of [0,98.25,undefined]){
+  p.score=score;const low=await (await send()).json();assert.equal(low.similarity,score??null);assert.equal(low.needsEvidence,true);
+  assert.equal((await confirm(low.reviewId,{similarity:100})).status,400);
+  const verified=await (await confirm(low.reviewId,{decision:'confirm',checkedId:true})).json();
+  assert.equal(verified.person.employeeNumber,'001');assert.equal(verified.similarity,score??null);
+  assert.equal(JSON.parse(db.get(low.reviewId).payload).checkedSupportingId,true);
+ }
+ p.score=99;const boundary=await (await send()).json();assert.equal(boundary.needsEvidence,false);
+ const decline=await (await confirm(boundary.reviewId,{decision:'decline'})).json();assert.deepEqual(decline,{declined:true,similarity:99});
+ assert.equal((await confirm(boundary.reviewId)).status,409);
+
  p.score=100;const review=await (await send(card.verificationUrl)).json();assert.ok(review.reviewId);assert.equal(review.person,undefined);
  p.user.userId='other';assert.equal((await confirm(review.reviewId)).status,409);
  p.user.userId='officer';assert.equal((await (await confirm(review.reviewId)).json()).person.employeeNumber,'001');

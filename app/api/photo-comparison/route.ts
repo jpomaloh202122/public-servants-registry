@@ -7,6 +7,7 @@ import {CardProblem, getIdCard, validEmployeeNumber, verifyIdCard} from '../../s
 
 const region='ap-southeast-2';
 const client=new RekognitionClient({region});
+const reviewThreshold=99;
 const maxBytes=3*1024*1024;
 const headers={'Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff'};
 const purposes=['ID presentation','Employee record check'];
@@ -53,29 +54,44 @@ async function resolveClaim(claim:string){
  return {number:result.employeeNumber,token};
 }
 
-type Review={kind:'photoComparison';outcome:string;purpose:string;number:string;revision:number;dataset:string;cardId:string|null;viaCard:boolean};
+type Review={kind:'photoComparison';outcome:string;purpose:string;number:string;revision:number;dataset:string;cardId:string|null;viaCard:boolean;similarity?:number|null};
 async function confirm(req:Request,actor:string){
- let id:unknown;try{id=JSON.parse((await readBody(req,1024)).toString()).reviewId;}catch{throw new Problem('Invalid review request.');}
+ let input;
+ try{input=JSON.parse((await readBody(req,1024)).toString());}catch{throw new Problem('Invalid review request.');}
+ const id=input?.reviewId;
+ // Previously opened reviews used a confirmation-only request.
+ const decision=input?.decision===undefined?'confirm':input.decision;
+ if(decision!=='confirm'&&decision!=='decline')throw new Problem('Choose a review decision.');
  if(typeof id!=='string'||!/^photo-[a-f0-9-]{36}$/.test(id))throw new Problem('Invalid review reference.');
  const row=await env.DB.prepare('SELECT payload FROM audit_events WHERE id=? AND actor=? AND created_at>=?')
   .bind(id,actor,new Date(Date.now()-300_000).toISOString()).first<{payload:string}>();
  if(!row)throw new Problem('Review expired. Start a fresh comparison.',409);
- const review=JSON.parse(row.payload) as Review;
+ const previousPayload=row.payload;
+ async function closeReview(final:Review&{confirmedAt?:string;decidedAt?:string;checkedSupportingId?:boolean}){
+  const saved=await env.DB.prepare('UPDATE audit_events SET payload=? WHERE id=? AND actor=? AND payload=?')
+  .bind(JSON.stringify(final),id,actor,previousPayload).run();
+  if(saved.meta.changes!==1)throw new Problem('Review already completed.',409);
+ }
+ const review=JSON.parse(previousPayload) as Review;
  if(review.kind!=='photoComparison'||review.outcome!=='awaiting review')throw new Problem('This review is closed.',409);
+ const declining=decision==='decline';
+ const needsEvidence=review.similarity!==undefined&&(review.similarity===null||review.similarity<reviewThreshold);
+ if(!declining&&needsEvidence&&input.checkedId!==true)throw new Problem('Check a supporting ID before manually verifying this comparison.');
+ if(declining){
+  await closeReview({...review,outcome:'officer declined',decidedAt:new Date().toISOString()});
+  return reply({declined:true,similarity:review.similarity});
+ }
  const card=await getIdCard(review.number);
  if(card.revision!==review.revision||card.datasetId!==review.dataset||(card.cardId??null)!==review.cardId||
     (review.viaCard&&card.status!=='issued'))throw new Problem('Registry or card changed. Start a fresh comparison.',409);
- const final={...review,outcome:'officer confirmed',confirmedAt:new Date().toISOString()};
- const saved=await env.DB.prepare('UPDATE audit_events SET payload=? WHERE id=? AND actor=? AND payload=?')
-  .bind(JSON.stringify(final),id,actor,row.payload).run();
- if(saved.meta.changes!==1)throw new Problem('Review already completed.',409);
- return reply({person:{name:card.name,department:card.agency,position:card.position,employeeNumber:card.employeeNumber,
+ await closeReview({...review,outcome:'officer confirmed',checkedSupportingId:needsEvidence,confirmedAt:new Date().toISOString()});
+ return reply({similarity:review.similarity,person:{name:card.name,department:card.agency,position:card.position,employeeNumber:card.employeeNumber,
   cardStatus:card.status==='issued'?'Current issued ID':'No current issued ID'}});
 }
 
 export async function POST(req:Request){
  const user=await getChatGPTUser();
- if(!user)return reply({error:'Sign in required.'},401);
+ if(!user)return reply({error:'Sign in to compare registry photos.'},401);
  if(!user.canComparePhotos||!process.env.APP_URL||req.headers.get('origin')!==new URL(process.env.APP_URL).origin)
   return reply({error:'Verifier access required.'},403);
  let auditId:string|undefined;
@@ -100,14 +116,22 @@ export async function POST(req:Request){
   if(!key?.startsWith('portraits/'))throw new Problem('Verified portrait unavailable.',409);
   const input:Image={Bytes:await photo(await readBody(req,maxBytes))};
   const reference:Image={S3Object:{Bucket:process.env.S3_BUCKET,Name:key}};
-  let outcome='manual review';
-  if(await singleFace(input)&&await singleFace(reference)){
-   const result=await client.send(new CompareFacesCommand({SourceImage:input,TargetImage:reference,SimilarityThreshold:99,QualityFilter:'HIGH'}));
-   if(result.FaceMatches?.length===1&&(result.FaceMatches[0].Similarity??0)>=99)outcome='awaiting review';
+  const comparable=await singleFace(input)&&await singleFace(reference);
+  let similarity:number|null=null;
+  if(comparable){
+   try{
+    const result=await client.send(new CompareFacesCommand({SourceImage:input,TargetImage:reference,SimilarityThreshold:0,QualityFilter:'HIGH'}));
+    const score=result.FaceMatches?.length===1?result.FaceMatches[0].Similarity:undefined;
+    if(typeof score==='number'&&Number.isFinite(score)&&score>=0&&score<=100)similarity=score;
+   }catch(error){
+    // Quality filtering can leave a detected portrait without a comparable face.
+    if(!(error instanceof Error)||error.name!=='InvalidParameterException')throw error;
+   }
   }
-  const review:Review={kind:'photoComparison',outcome,purpose,number,revision:card.revision,dataset:card.datasetId,cardId:card.cardId??null,viaCard:!!token};
+  const outcome=comparable?'awaiting review':'recapture required';
+  const review:Review={kind:'photoComparison',outcome,similarity,purpose,number,revision:card.revision,dataset:card.datasetId,cardId:card.cardId??null,viaCard:!!token};
   await env.DB.prepare('UPDATE audit_events SET payload=? WHERE id=?').bind(JSON.stringify(review),id).run();
-  return reply(outcome==='awaiting review'?{reviewId:id,portrait:card.photoUrl}:{manual:true});
+  return reply(comparable?{reviewId:id,portrait:card.photoUrl,similarity,needsEvidence:similarity===null||similarity<reviewThreshold}:{manual:true});
  }catch(error){
   if(auditId)await env.DB.prepare('UPDATE audit_events SET payload=? WHERE id=?').bind(JSON.stringify({kind:'photoComparison',outcome:'incomplete',purpose:req.headers.get('x-check-purpose')}),auditId).run().catch(()=>{});
   if(error instanceof Problem)return reply({error:error.message},error.status);
