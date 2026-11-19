@@ -1,3 +1,5 @@
+import PhotoComparison from '../../photo-comparison';
+import {getChatGPTUser} from '../../chatgpt-auth';
 import {verifyIdCard} from '../../server-id-card';
 import type {CardVerification} from '../../id-card';
 export const dynamic='force-dynamic';
@@ -16,6 +18,7 @@ export default async function VerifyCardPage({params}:{params:Promise<{token:str
  const {token}=await params;
  let result:CardVerification;
  try{result=await verifyIdCard(token);}catch{result={status:'unavailable',checkedAt:new Date().toISOString()};}
+ const verifier=result.status==='valid'?(await getChatGPTUser())?.canComparePhotos:false;
  const [title,description]=descriptions[result.status];
  return <main className="card-verification">
   <img src="/png-state-emblem.png" alt="Government of PNG Public Servants Registry System"/>
@@ -25,5 +28,6 @@ export default async function VerifyCardPage({params}:{params:Promise<{token:str
   {result.status==='valid'&&<dl>{[['Full name',result.name],['Department',result.agency],['Position',result.position],
     ['Gender',result.gender],['Employee Number',result.employeeNumber]].map(([label,value])=><div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>}
   <p className="verification-time">Checked {new Date(result.checkedAt).toLocaleString('en-PG',{timeZone:'Pacific/Port_Moresby'})} PNG time</p>
+ {verifier&&process.env.APP_URL&&<details><summary>Compare the cardholder’s photo</summary><PhotoComparison issuedCardLink={new URL('/verify/'+token,process.env.APP_URL).href}/></details>}
  </main>;
 }

@@ -93,3 +93,5 @@
 }
 .card-verification { border-top: 4px solid var(--registry-red); }
 .card-verification .eyebrow { color: #805313; }
+
+.photo-check{padding:24px;max-width:780px}.photo-check fieldset{border:0;padding:0;margin:0;display:grid;gap:16px}.photo-check label{display:grid;gap:6px;font-weight:600}.photo-check input:not([type=checkbox]),.photo-check select{max-width:100%;padding:10px;border:1px solid #bbb;border-radius:6px}.photo-check label.photo-consent,.photo-actions{display:flex;align-items:center;gap:12px;flex-wrap:wrap}.photo-check img,.photo-check video{display:block;width:auto;max-width:100%;height:180px;object-fit:contain}.photo-check figure{margin:0}.photo-check figcaption,.photo-check dt{font-weight:600}.photo-check dd{margin:2px 0 10px}.photo-check button{justify-self:start}.photo-check p{line-height:1.5}.photo-check [role=alert]{color:#991b1b}

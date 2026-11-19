@@ -1,0 +1,22 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Staff-only Sydney photo comparison pilot
+Parameters:
+  UserPoolId: {Type: String}
+  ComputeRoleName: {Type: String}
+Resources:
+  Verifiers:
+    Type: AWS::Cognito::UserPoolGroup
+    Properties: {GroupName: RegistryPhotoVerifiers, UserPoolId: !Ref UserPoolId}
+  ComparisonPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: RegistryPhotoComparison
+      Roles: [!Ref ComputeRoleName]
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action: ['rekognition:DetectFaces', 'rekognition:CompareFaces']
+            Resource: '*'
+            Condition:
+              StringEquals: {'aws:RequestedRegion': ap-southeast-2}

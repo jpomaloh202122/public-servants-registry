@@ -91,3 +91,11 @@ Full payroll snapshots now retain missing officers as Inactive and queue signed 
 ## Public Servant digital IDs
 
 Every employee has a card button showing readiness checks or the supplied landscape card template. Ready records can be explicitly approved and issued with a persisted registry ID, audit trail, one-page PDF and live QR verification. Payroll and identity changes invalidate older IDs. Run the issued-card database setup before issuance. See [Digital IDs](docs/id-card-previews.md) for deployment, privacy and the separate SevisWallet integration.
+
+### Supervised photo comparison pilot
+
+From a checkout of this release, run `bash scripts/deploy-photo-comparison.sh` in AWS CloudShell using the account that hosts the registry. This adds the verifier group and Sydney-only DetectFaces and CompareFaces permissions to the existing Amplify compute role. Assign designated pilot officers to both RegistryUsers and RegistryPhotoVerifiers in Cognito, then sign in again. No database migration is required.
+
+Open **Verify public servant**, enter the exact Employee Number or scan the issued-card link with a QR reader, record a purpose and confirm the participant's agreement. Use a single-person JPEG/PNG or the camera. The pilot uses the registry's active, pass-ready records with verified portraits. A matching result requires officer review before employee details are released. A still image cannot establish liveness. The portal does not save the submitted image or build a face collection. Review the AWS account's AI services data-use settings and pilot governance before submitting participant photos.
+
+The initial similarity cutoff is 99 on the AWS similarity scale. Validate it with consenting participants on representative devices. Record wrong matches, missed matches and manual referrals before extending the pilot. Checks never update payroll, employee verification or issued ID state.
