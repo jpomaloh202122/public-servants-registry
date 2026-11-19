@@ -92,11 +92,11 @@ try {
  const {makeIdCardPdf}=await import(pathToFileURL(join(dir,'id-card-pdf.mjs')));
  const QRCode=(await import('qrcode')).default;
  const sample={...issued,status:'sample',verificationUrl:'https://main.d2p2kldeb52a64.amplifyapp.com/verify/preview',qrDataUrl:await QRCode.toDataURL('https://main.d2p2kldeb52a64.amplifyapp.com/verify/preview',{margin:4,width:360})};
- const assets={logo:'data:image/png;base64,'+readFileSync('public/png-state-emblem.png').toString('base64'),font:readFileSync('public/report-fonts/DejaVuSans.ttf').toString('base64'),bold:readFileSync('public/report-fonts/DejaVuSans-Bold.ttf').toString('base64')};
- const pdf=makeIdCardPdf(sample,assets);assert.equal(pdf.getNumberOfPages(),1);assert.equal(pdf.internal.pageSize.getWidth(),86);assert.equal(pdf.internal.pageSize.getHeight(),54);
- assert.equal(makeIdCardPdf({...sample,name:'Émilie Example'},assets).getNumberOfPages(),1);
- assert.throws(()=>makeIdCardPdf({...sample,name:'Overlong name '.repeat(200)},assets),/too long/);
- writeFileSync('work/Public_Servant_ID_Card_Sample.pdf',Buffer.from(pdf.output('arraybuffer')));
+ // The browser renderer supplies the finished PNG to the print wrapper.
+ const rendered='data:image/png;base64,'+(await sharp('public/pass-art/physical.webp').png().toBuffer()).toString('base64');
+ const pdf=makeIdCardPdf(sample,rendered);
+ assert.equal(pdf.getNumberOfPages(),1);assert.equal(pdf.internal.pageSize.getWidth(),86);assert.equal(pdf.internal.pageSize.getHeight(),54);
+ assert.ok(pdf.output('arraybuffer').byteLength>10000);
  await db.exec('DROP TABLE registry_id_cards');
  assert.equal((await (await listCards(listRequest())).json()).installed,false,'Missing setup has a clear empty state');
  console.log('ID card checks passed: readiness diagnostics, exact identifiers, approval, atomic rollback, idempotent issuance, QR decoding, authenticated issued-ID totals/search/pagination, public field limits, lifecycle invalidation, replacement/revocation and template PDF.');

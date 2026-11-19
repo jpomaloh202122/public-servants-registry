@@ -1,6 +1,8 @@
 'use client';
 import {useEffect,useRef,useState} from 'react';
 import {Download,RefreshCw,ShieldCheck,X} from 'lucide-react';
+import styles from './pass-design.module.css';
+import {renderPass} from './pass-renderer';
 import {PassDesign} from './pass-design';
 import type {IdCard} from './id-card';
 class CardRequestError extends Error {
@@ -14,30 +16,8 @@ async function resultCard(response:Response):Promise<IdCard> {
 async function readCard(number:string,signal?:AbortSignal) {
  return resultCard(await fetch('/api/id-card?'+new URLSearchParams({employeeNumber:number}),{cache:'no-store',signal}));
 }
-async function asset(path:string) {
- const response=await fetch(path);
- if(!response.ok)throw Error('The card branding could not be loaded.');
- const bytes=new Uint8Array(await response.arrayBuffer());
- let binary='';
- for(let index=0;index<bytes.length;index+=32768)binary+=String.fromCharCode(...bytes.subarray(index,index+32768));
- return btoa(binary);
-}
-async function portraitForPrint(url:string) {
- const image=new Image();
- image.src=url;
- await image.decode();
- const canvas=document.createElement('canvas');
- canvas.width=360;canvas.height=480;
- const ctx=canvas.getContext('2d');
- if(!ctx)throw Error('The portrait could not be prepared for printing.');
- const scale=Math.max(360/image.naturalWidth,480/image.naturalHeight);
- const width=image.naturalWidth*scale,height=image.naturalHeight*scale;
- ctx.fillStyle='#fff';ctx.fillRect(0,0,360,480);
- ctx.drawImage(image,(360-width)/2,(480-height)/2,width,height);
- return canvas.toDataURL('image/jpeg',0.94);
-}
 export default function IdCardPreview({number,onClose,onReview,onIssued}:{number:string;onClose:()=>void;onReview?:()=>void;onIssued?:()=>void}) {
- const [wallet,setWallet]=useState(false);
+ const [format,setFormat]=useState<'both'|'physical'|'digital'>('both');
  const alive=useRef(true);
  useEffect(()=>{alive.current=true;return()=>{alive.current=false;};},[]);
  const dialog=useRef<HTMLDialogElement>(null);
@@ -70,10 +50,8 @@ export default function IdCardPreview({number,onClose,onReview,onIssued}:{number
   setBusy('Preparing card…');setError('');setChecks([]);
   try {
    const current=await readCard(number);
-   const [logo,font,bold,lib,portrait]=await Promise.all([
-    asset('/png-state-emblem.png'),asset('/report-fonts/DejaVuSans.ttf'),asset('/report-fonts/DejaVuSans-Bold.ttf'),import('./id-card-pdf'),portraitForPrint(current.photoUrl)
-   ]);
-   const pdf=lib.makeIdCardPdf(current,{logo:'data:image/png;base64,'+logo,font,bold,portrait});
+   const [canvas,lib]=await Promise.all([renderPass(current,'physical'),import('./id-card-pdf')]);
+   const pdf=lib.makeIdCardPdf(current,canvas.toDataURL('image/png'));
    const latest=await readCard(number);
    if(latest.datasetId!==current.datasetId||latest.revision!==current.revision||latest.cardId!==current.cardId)
     throw Error('The registry changed while preparing the PDF. Recheck and retry.');
@@ -90,10 +68,14 @@ export default function IdCardPreview({number,onClose,onReview,onIssued}:{number
   {!card&&!error&&<p role="status">Checking payroll, record completeness and the verified portrait…</p>}
   {card&&<>
    <div className="id-card-buttons" role="group" aria-label="ID format">
-    <button type="button" className={'btn'+(!wallet?' primary':'')} aria-pressed={!wallet} onClick={()=>setWallet(false)}>Physical pass</button>
-    <button type="button" className={'btn'+(wallet?' primary':'')} aria-pressed={wallet} onClick={()=>setWallet(true)}>Digital ID</button>
+    {(['both','physical','digital'] as const).map(option=><button type="button" key={option}
+     className={'btn'+(format===option?' primary':'')} aria-pressed={format===option} onClick={()=>setFormat(option)}>
+     {{both:'Both designs',physical:'Physical pass',digital:'Digital ID'}[option]}</button>)}
    </div>
-   <div className="id-card-board"><PassDesign card={card} wallet={wallet}/></div>
+   <div className={'id-card-board '+(format==='both'?styles.pair:'')}>
+    {format!=='digital'&&<PassDesign card={card} wallet={false}/>}
+    {format!=='physical'&&<PassDesign card={card} wallet/>}
+   </div>
    <div className="card-evidence"><img src={card.photoUrl} alt="Saved verified portrait"/><div><b>Verified portrait on file</b>
     <p>Employee {card.employeeNumber} · Payroll period {card.payrollCycle??'Not recorded'} · Revision {card.revision}</p>
     <p>{card.status==='issued'?'Registry ID '+card.cardId:card.needsReplacement?'The earlier ID requires replacement after record changes.':'Awaiting issuance approval.'}</p>
