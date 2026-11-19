@@ -31,6 +31,8 @@ AWS_REGION=ap-southeast-2 node scripts/deploy-payroll-lifecycle.mjs
 
 The optional script argument is the backend stack name, default ps-id-registry-backend. It runs idempotent schema/bootstrap changes, uploads the Lambda artifact to the existing private bucket and deploys a separate backend-name-webhooks CloudFormation stack. This adds a billable Lambda, EventBridge Scheduler, Secrets Manager configuration secret and 30-day CloudWatch log group. The worker uses the restricted runtime database credential, not the owner secret. Role changes are required for the new tables. Direct employee access remains restricted.
 
+The dispatcher uses shared account concurrency by default, avoiding reservations that small sandbox quotas cannot allocate. ReservedConcurrency can optionally be set to a positive value in the webhook stack when quota permits. Database leases, fencing tokens and receiver idempotency protect overlapping invocations. The deployment script recreates only a webhook stack in ROLLBACK_COMPLETE, after waiting for any create rollback to finish. A failed initial configuration secret may be retained by CloudFormation.
+
 The script prints WebhookConfigurationSecret and DispatcherFunction outputs. Amplify deploys the committed application separately. Source activation fails with a migration instruction until the database trigger is installed. Confirm the Amplify release commit before testing.
 
 ## Configure the receiving systems

@@ -5,6 +5,13 @@ Parameters:
   DatabaseSecretArn: {Type: String}
   ArtifactBucket: {Type: String}
   ArtifactKey: {Type: String}
+  ReservedConcurrency:
+    Type: Number
+    Default: 0
+    MinValue: 0
+    Description: 0 uses shared account concurrency. A positive value requires available reservation quota.
+Conditions:
+  ReserveConcurrency: !Not [!Equals [!Ref ReservedConcurrency, 0]]
 Resources:
   Configuration:
     Type: AWS::SecretsManager::Secret
@@ -51,7 +58,7 @@ Resources:
       Role: !GetAtt Role.Arn
       Timeout: 120
       MemorySize: 256
-      ReservedConcurrentExecutions: 1
+      ReservedConcurrentExecutions: !If [ReserveConcurrency, !Ref ReservedConcurrency, !Ref 'AWS::NoValue']
       Code: {S3Bucket: !Ref ArtifactBucket, S3Key: !Ref ArtifactKey}
       Environment:
         Variables:
