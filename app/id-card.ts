@@ -4,11 +4,27 @@ export type IdCard = {
  agency:string;
  agencyCode:string;
  position:string;
+ gender:string;
  photoUrl:string;
  datasetId:string;
  revision:number;
  payrollCycle:string|null;
  assessedOn:string;
  preparedAt:string;
- status:'preview';
+ status:'preview'|'issued'|'sample';
+ issuanceAvailable:boolean;
+ verificationUrl:string;
+ qrDataUrl:string;
+ cardId?:string;
+ issuedAt?:string;
+ needsReplacement?:boolean;
+};
+export type CardVerification = {
+ status:'valid'|'inactive'|'changed'|'revoked'|'superseded'|'unknown'|'preview'|'unavailable';
+ checkedAt:string;
+ employeeNumber?:string;
+ name?:string;
+ agency?:string;
+ position?:string;
+ gender?:string;
 };

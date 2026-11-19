@@ -22,4 +22,5 @@ await run('REVOKE ALL ON FUNCTION registry_valid_dob(text) FROM PUBLIC');
 await run('GRANT EXECUTE ON FUNCTION registry_valid_dob(text) TO registry_app');
 await run('GRANT SELECT ON registry_change_events,registry_webhook_deliveries TO registry_app');
 await run('GRANT UPDATE ON registry_webhook_deliveries TO registry_app');
+await run('GRANT SELECT,INSERT,UPDATE ON registry_id_cards TO registry_app');
 console.log('Restricted runtime database user configured.');

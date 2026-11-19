@@ -88,6 +88,6 @@ SevisPass integration, high availability, capacity/load testing, agency permissi
 
 Full payroll snapshots now retain missing officers as Inactive and queue signed credential-change webhooks. Deploy the database triggers and dispatcher before activating another source. See [Payroll lifecycle and webhook deployment](docs/payroll-lifecycle-webhooks.md) for setup, partner configuration and acceptance.
 
-## Digital ID card previews
+## Public Servant digital IDs
 
-Ready employees have a card icon in the employee register for a GPO-branded preview and two-sided PDF. The server rechecks current readiness. See [ID card previews](docs/id-card-previews.md) for access, validation and the SevisPass issuance boundary.
+Every employee has a card button showing readiness checks or the supplied landscape card template. Ready records can be explicitly approved and issued with a persisted registry ID, audit trail, one-page PDF and live QR verification. Payroll and identity changes invalidate older IDs. Run the issued-card database setup before issuance. See [Digital IDs](docs/id-card-previews.md) for deployment, privacy and the separate SevisWallet integration.
