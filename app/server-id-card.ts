@@ -4,7 +4,7 @@ import {env} from '@/lib/aws-runtime';
 import {config,CONFIG} from './server-registry';
 import {effectiveEmployee,pngToday} from './quality';
 import {ready,issues,normaliseGender,type Employee,type Agency} from './model';
-import type {IdCard,CardVerification} from './id-card';
+import {cardDates,type IdCard,type CardVerification} from './id-card';
 
 export class CardProblem extends Error {
  constructor(message:string,readonly status:number,readonly checks:string[]=[]){super(message);}
@@ -70,20 +70,22 @@ export async function loadReadyCard(number:string) {
   issuanceAvailable:installed,verificationUrl:verificationUrl('preview'),qrDataUrl:''};
  return {card,current,recordHash:identityHash(employee,agency!),sequence};
 }
-type StoredCard={id:string;state:string;verification_token:string;record_hash:string;employee_sequence:string;issued_at:string;payload:string};
+type StoredCard={id:string;state:string;verification_token:string;record_hash:string;employee_sequence:string;issued_utc:string;payload:string};
+// Request explicit UTC text so expiry is independent of the Data API timestamp format.
+const storedColumns="*, to_char(issued_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.MS\"Z\"') AS issued_utc";
 async function currentIssued(number:string) {
- return env.DB.prepare("SELECT * FROM registry_id_cards WHERE employee_number=? AND state='issued'")
+ return env.DB.prepare("SELECT "+storedColumns+" FROM registry_id_cards WHERE employee_number=? AND state='issued'")
   .bind(number).first<StoredCard>();
 }
 async function attachIssued(card:IdCard,stored:StoredCard) {
  const url=verificationUrl(stored.verification_token);
- return {...card,status:'issued' as const,cardId:stored.id,issuedAt:stored.issued_at,verificationUrl:url,qrDataUrl:await qr(url)};
+ return {...card,status:'issued' as const,cardId:stored.id,issuedAt:stored.issued_utc,...cardDates(stored.issued_utc),verificationUrl:url,qrDataUrl:await qr(url)};
 }
 export async function getIdCard(number:string) {
  const context=await loadReadyCard(number);
  if(context.card.issuanceAvailable) {
   const stored=await currentIssued(number);
-  if(stored&&stored.record_hash===context.recordHash&&stored.employee_sequence===context.sequence)
+  if(stored&&context.card.assessedOn<cardDates(stored.issued_utc).expiresOn&&stored.record_hash===context.recordHash&&stored.employee_sequence===context.sequence)
    return attachIssued(context.card,stored);
   context.card.needsReplacement=!!stored;
  }
@@ -94,13 +96,14 @@ export async function issueIdCard(input:{employeeNumber:string;revision:number;d
  const context=await loadReadyCard(input.employeeNumber);
  if(!context.card.issuanceAvailable)throw new CardProblem('Install the issued-card database setup before issuing IDs.',503);
  const existing=await currentIssued(input.employeeNumber);
- if(existing&&existing.record_hash===context.recordHash&&existing.employee_sequence===context.sequence)
+ if(existing&&context.card.assessedOn<cardDates(existing.issued_utc).expiresOn&&existing.record_hash===context.recordHash&&existing.employee_sequence===context.sequence)
   return attachIssued(context.card,existing); // A repeated request reuses the committed card.
  if(context.card.datasetId!==input.datasetId||context.card.revision!==input.revision)
   throw new CardProblem('The registry changed. Review the saved record before issuing.',409);
  const token=randomBytes(32).toString('hex');
  const url=verificationUrl(token);
- const card:IdCard={...context.card,status:'issued',cardId:randomUUID(),issuedAt:new Date().toISOString(),
+ const issuedAt=new Date().toISOString();
+ const card:IdCard={...context.card,status:'issued',cardId:randomUUID(),issuedAt,...cardDates(issuedAt),
   verificationUrl:url,qrDataUrl:await qr(url)};
  const event={id:randomUUID(),time:card.issuedAt,action:'Public Servant ID issued',
   detail:input.employeeNumber+' issued registry ID '+card.cardId,actor:user.displayName};
@@ -124,10 +127,11 @@ export async function verifyIdCard(token:string):Promise<CardVerification> {
  if(token==='preview')return {status:'preview',checkedAt};
  if(!/^[a-f0-9]{64}$/.test(token))return {status:'unknown',checkedAt};
  if(!await cardSetupAvailable())return {status:'unavailable',checkedAt};
- const stored=await env.DB.prepare('SELECT * FROM registry_id_cards WHERE token_hash=?')
+ const stored=await env.DB.prepare("SELECT "+storedColumns+" FROM registry_id_cards WHERE token_hash=?")
   .bind(hash(token)).first<StoredCard&{employee_number:string}>();
  if(!stored)return {status:'unknown',checkedAt};
  if(stored.state==='revoked'||stored.state==='superseded')return {status:stored.state,checkedAt};
+ if(pngToday()>=cardDates(stored.issued_utc).expiresOn)return {status:'expired',checkedAt};
  try {
   const context=await loadReadyCard(stored.employee_number);
   if(context.recordHash!==stored.record_hash||context.sequence!==stored.employee_sequence)

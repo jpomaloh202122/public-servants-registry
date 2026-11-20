@@ -1,4 +1,4 @@
-import type {IdCard} from './id-card';
+import {displayCardDate,type IdCard} from './id-card';
 
 export type PassFormat='physical'|'digital';
 
@@ -58,6 +58,19 @@ export async function renderPass(card:IdCard,format:PassFormat):Promise<HTMLCanv
   fitted(card.position,330,512,117,28,16);
   fitted(card.gender,330,547,117,25,16);
   fitted(card.employeeNumber,330,581,117,38,18);
+ }
+ const issued=card.issuedOn?displayCardDate(card.issuedOn):'On issuance';
+ const expiry=card.expiresOn?displayCardDate(card.expiresOn):'3 years from issue';
+ const validityField=(label:string,value:string,x:number,y:number,width:number)=>{
+  fitted(label,x,y,width,18,physical?16:14,true);
+  fitted(value,x,y+18,width,25,physical?21:18);
+ };
+ if(physical){
+  validityField('Date of issuance',issued,335,588,218);
+  validityField('Expiry date',expiry,568,588,240);
+ }else{
+  validityField('Date of issuance',issued,50,649,184);
+  validityField('Expiry date',expiry,72,707,166);
  }
  return canvas;
 }
