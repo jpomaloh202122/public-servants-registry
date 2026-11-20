@@ -78,7 +78,7 @@ export default function IdCardPreview({number,onClose,onReview,onIssued}:{number
    </div>
    <div className="card-evidence"><img src={card.photoUrl} alt="Saved verified portrait"/><div><b>Verified portrait on file</b>
     <p>Employee {card.employeeNumber} · Payroll period {card.payrollCycle??'Not recorded'} · Revision {card.revision}</p>
-    <p>{card.status==='issued'?'Registry ID '+card.cardId:card.needsReplacement?'The earlier ID requires replacement after record changes.':'Awaiting issuance approval.'}</p>
+    <p>{card.status==='issued'?'Registry ID '+card.cardId:card.needsReplacement?'The earlier ID has expired or requires replacement after record changes.':'Awaiting issuance approval.'}</p>
     {!card.issuanceAvailable&&<p>Install the issued-card database setup to enable issuance.</p>}</div></div>
   </>}
   {error&&<div role="alert" className="form-error id-card-error"><p>{error}</p>{checks.length>0&&<ul>{checks.map(check=><li key={check}>{check}</li>)}</ul>}</div>}
