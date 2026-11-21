@@ -27,6 +27,8 @@ const post=data=>POST(new Request(url,{method:'POST',headers:{origin:process.env
  const start={action:'start',bytes:123,name:'Establishment.xls'};
  assert.equal((await post(start)).status,401);user={userId:'a'};
  assert.equal((await post({...start,name:'source.exe'})).status,400);
+ assert.equal((await post({...start,bytes:50*1024*1024})).status,200);
+ assert.equal((await post({...start,bytes:50*1024*1024+1})).status,400);
  const {id}=await (await post(start)).json();assert.ok(id);
  const finish={action:'finish',id};assert.equal((await post(finish)).status,409);
  object={ContentLength:123,VersionId:'original'};user.userId='b';assert.equal((await post(finish)).status,404);

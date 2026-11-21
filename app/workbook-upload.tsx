@@ -35,10 +35,10 @@ export default function WorkbookUpload({manager}:{manager:boolean}){
  }
  return <section className="panel import-workflow"><h2>Upload Excel workbook</h2>
  <p>Submit a Whole-of-Government establishment workbook or employee source file for review.</p>
- <label className="import-drop">Choose workbook (.xls or .xlsx, up to 25 MB)<input ref={picker} type="file" accept=".xls,.xlsx" disabled={busy} onChange={e=>{
+ <label className="import-drop">Choose workbook (.xls or .xlsx, up to 50 MB)<input ref={picker} type="file" accept=".xls,.xlsx" disabled={busy} onChange={e=>{
   const f=e.target.files?.[0];uploaded.current=null;setNotice('');setError('');setFile(null);
   if(!f)return;
-  if(!/\.xlsx?$/i.test(f.name)||!f.size||f.size>25*1024*1024){setError('Choose an XLS or XLSX workbook up to 25 MB.');return;}setFile(f);
+  if(!/\.xlsx?$/i.test(f.name)||!f.size||f.size>50*1024*1024){setError('Choose an XLS or XLSX workbook up to 50 MB.');return;}setFile(f);
  }}/></label>
  <button className="btn primary" disabled={!file||busy} onClick={submit}>{busy?'Uploading…':'Upload workbook'}</button>
  {notice&&<p role="status">{notice}</p>}{error&&<p role="alert">{error}</p>}

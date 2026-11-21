@@ -4,7 +4,7 @@ import {uploadURL,downloadURL} from '@/lib/object-storage';
 import {getChatGPTUser} from '../../chatgpt-auth';
 
 const prefix='workbook-inbox:';
-const limit=25*1024*1024;
+const limit=50*1024*1024;
 const validId=(id:unknown):id is string=>typeof id==='string'&&/^\d{13}-[a-f0-9-]{36}$/.test(id);
 const send=(data:unknown,status=200)=>Response.json(data,{status,headers:{'Cache-Control':'private, no-store'}});
 async function lookup(id:string){
@@ -19,7 +19,7 @@ export async function POST(req:Request){
  try{
   if(data?.action==='start'){
    if(typeof data.name!=='string'||data.name.length>255||!/^([^/\\\x00-\x1f]+)\.xlsx?$/i.test(data.name)||
-      !Number.isSafeInteger(data.bytes)||data.bytes<1||data.bytes>limit)return send({error:'Choose an XLS or XLSX workbook up to 25 MB.'},400);
+      !Number.isSafeInteger(data.bytes)||data.bytes<1||data.bytes>limit)return send({error:'Choose an XLS or XLSX workbook up to 50 MB.'},400);
    const id=Date.now()+'-'+randomUUID(),key='uploads/workbooks/'+id;
    const entry={id,key,name:data.name,bytes:data.bytes,owner:user.userId,created:new Date().toISOString()};
    const url=await uploadURL(key,data.bytes);
