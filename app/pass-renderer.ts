@@ -11,8 +11,9 @@ function loadImage(src:string):Promise<HTMLImageElement> {
 // Coordinates follow the two approved artwork masters in their native pixels.
 export async function renderPass(card:IdCard,format:PassFormat):Promise<HTMLCanvasElement> {
  const physical=format==='physical';
- const [art,photo,qr]=await Promise.all([
-  loadImage('/pass-art/'+format+'.webp'),loadImage(card.photoUrl),loadImage(card.qrDataUrl)
+ const [art,photo,qr,approval]=await Promise.all([
+  loadImage('/pass-art/'+format+'.webp'),loadImage(card.photoUrl),loadImage(card.qrDataUrl),
+  loadImage('/pass-art/secretary-approval.svg')
  ]);
  const canvas=document.createElement('canvas');
  canvas.width=art.naturalWidth;canvas.height=art.naturalHeight;
@@ -68,9 +69,11 @@ export async function renderPass(card:IdCard,format:PassFormat):Promise<HTMLCanv
  if(physical){
   validityField('Date of issuance',issued,335,588,218);
   validityField('Expiry date',expiry,568,588,240);
+  ctx.drawImage(approval,810,580,230,58);
  }else{
   validityField('Date of issuance',issued,50,649,184);
-  validityField('Expiry date',expiry,72,707,166);
+  validityField('Expiry date',expiry,50,695,184);
+  ctx.drawImage(approval,50,744,192,49);
  }
  return canvas;
 }

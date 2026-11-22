@@ -9,9 +9,10 @@ const directory=mkdtempSync(join(tmpdir(),'registry-activation-'));
 const db=new PGlite();
 try {
  for(const [path,name] of [['app/model.ts','model'],['app/quality.ts','quality'],['app/quality-postgres.ts','quality-postgres'],
-  ['app/server-registry.ts','server-registry'],['lib/postgres-sql.ts','postgres-sql'],['app/api/imports/route.ts','route'],['app/api/payroll-changes/route.ts','changes']]){
+  ['app/import-comparison.ts','import-comparison'],['app/server-registry.ts','server-registry'],['lib/postgres-sql.ts','postgres-sql'],['app/api/imports/route.ts','route'],['app/api/payroll-changes/route.ts','changes']]){
   const source=readFileSync(path,'utf8')
    .replace(/from '\.\/([^']+)'/g,"from './$1.mjs'")
+   .replaceAll("'../../import-comparison'","'./import-comparison.mjs'")
    .replaceAll("'../../server-registry'","'./server-registry.mjs'")
    .replaceAll("'../../model'","'./model.mjs'")
    .replace(/'(@\/lib\/(aws-runtime|object-storage)|\.\.\/\.\.\/chatgpt-auth)'/g,"'./runtime.mjs'");
@@ -22,10 +23,10 @@ try {
   const parsed=postgresSQL(sql).sql.replace(/:p([0-9]+)/g,(_,i)=>'$'+(Number(i)+1));
   return db.query(parsed,args);
  };
- globalThis.__activationFixture={DB:{dialect:'postgres',prepare(sql){return {bind(...args){return {
+ globalThis.__activationFixture={DB:{dialect:'postgres',async batch(statements){await db.exec('BEGIN');try{for(const st of statements)await st.run();await db.exec('COMMIT');}catch(e){await db.exec('ROLLBACK');throw e;}},prepare(sql){return {bind(...args){return {
   async first(){return (await run(sql,args)).rows[0]||null;},
   async all(){return {results:(await run(sql,args)).rows};},
-  async run(){return {meta:{changes:(await run(sql,args)).affectedRows}};}
+  expectChanges(n){this.expected=n;return this;},async run(){const changes=(await run(sql,args)).affectedRows;if(this.expected!==undefined&&changes!==this.expected)throw Error('Concurrent registry change');return {meta:{changes}};}
  };},async first(){return (await run(sql)).rows[0]||null;},async all(){return {results:(await run(sql)).rows};}};}},
  BUCKET:{async head(){return {ContentLength:1};}}};
  writeFileSync(join(directory,'runtime.mjs'),"export const env=globalThis.__activationFixture;export const getChatGPTUser=async()=>({canManageSources:true,userId:'owner',displayName:'Test'});export const uploadURL=async()=>'';export const downloadURL=async()=>'';");
@@ -44,14 +45,26 @@ try {
  const {POST}=await import(pathToFileURL(join(directory,'route.mjs')));
  const request=body=>new Request('https://registry.test/api/imports?action=activate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,confirm:true,...body})});
  assert.equal((await POST(request({}))).status,400,'Full-period confirmation required');
- const response=await POST(request({fullPayroll:true}));
+ assert.equal((await POST(request({fullPayroll:true}))).status,409);
+ const compare=()=>POST(new Request('https://registry.test/api/imports?action=compare',{method:'POST',body:JSON.stringify({id})}));
+ const report=await (await compare()).json();
+ assert.equal(report.totals.added,1);assert.equal(report.totals.missing,1);
+ await db.query("UPDATE employees SET payload=(payload::jsonb || jsonb_build_object('dob','1990-01-01'))::text WHERE dataset='old'");
+ await db.query("UPDATE registry SET revision=revision+1 WHERE id='excel-config'");
+ assert.equal((await POST(request({fullPayroll:true,comparisonToken:report.token,reviewedChanges:true}))).status,409);
+ const eventsBeforeActivation=Number((await db.query('SELECT COUNT(*) AS n FROM registry_change_events')).rows[0].n);
+ const refreshed=await (await compare()).json();
+ await db.query("UPDATE employees SET payload=(payload::jsonb || jsonb_build_object('gender','Female'))::text WHERE dataset=$1",[id]);
+ assert.equal((await POST(request({fullPayroll:true,comparisonToken:refreshed.token,reviewedChanges:true}))).status,409);
+ const finalReview=await (await compare()).json();
+ const response=await POST(request({fullPayroll:true,comparisonToken:finalReview.token,reviewedChanges:true}));
  assert.equal(response.status,200,await response.text());
  assert.equal((await db.query('SELECT status FROM employees WHERE dataset=$1 AND number=$2',[id,'0001'])).rows[0].status,'Inactive');
- assert.equal((await db.query('SELECT COUNT(*)::int AS n FROM registry_change_events')).rows[0].n,2);
+ assert.equal((await db.query('SELECT COUNT(*)::int AS n FROM registry_change_events')).rows[0].n,eventsBeforeActivation+2);
  // Simulate a lost final response / failed upload metadata save after activation.
  await db.query('UPDATE registry SET payload=$1 WHERE id=$2',[JSON.stringify(metadata),'source-upload:'+id]);
  assert.equal((await POST(request({fullPayroll:true}))).status,200);
- assert.equal((await db.query('SELECT COUNT(*)::int AS n FROM registry_change_events')).rows[0].n,2);
+ assert.equal((await db.query('SELECT COUNT(*)::int AS n FROM registry_change_events')).rows[0].n,eventsBeforeActivation+2);
  const changes=await import(pathToFileURL(join(directory,'changes.mjs')));
  const comparison=await (await changes.GET(new Request('https://registry.test/api/payroll-changes'))).json();
  assert.equal(comparison.changes.length,2);

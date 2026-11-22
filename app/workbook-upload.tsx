@@ -8,7 +8,8 @@ async function request(action:string,data:Record<string,unknown>){
  if(!response.ok)throw Error(result.error||'Upload failed.');
  return result;
 }
-export default function WorkbookUpload({manager}:{manager:boolean}){
+export default function WorkbookUpload({manager,onCompare}:{manager:boolean;onCompare:(file:File)=>void}){
+ const [received,setReceived]=useState<File|null>(null);
  const [file,setFile]=useState<File|null>(null),[busy,setBusy]=useState(false),[notice,setNotice]=useState(''),[error,setError]=useState('');
  const [entries,setEntries]=useState<Entry[]>([]),[next,setNext]=useState<string|null>(null);
  const picker=useRef<HTMLInputElement>(null),uploaded=useRef<string|null>(null);
@@ -29,20 +30,20 @@ export default function WorkbookUpload({manager}:{manager:boolean}){
    }
    await request('finish',{id:uploaded.current});uploaded.current=null;setFile(null);
    if(picker.current)picker.current.value='';
-   setNotice('Workbook received for review.');
+   setReceived(manager?file:null);setNotice('Workbook received for review. Employee workbooks require mapping and database comparison before activation.');
    if(manager)await list();
   }catch(e){setError(e instanceof Error?e.message:'Upload failed.');}finally{setBusy(false);}
  }
  return <section className="panel import-workflow"><h2>Upload Excel workbook</h2>
  <p>Submit a Whole-of-Government establishment workbook or employee source file for review.</p>
  <label className="import-drop">Choose workbook (.xls or .xlsx, up to 50 MB)<input ref={picker} type="file" accept=".xls,.xlsx" disabled={busy} onChange={e=>{
-  const f=e.target.files?.[0];uploaded.current=null;setNotice('');setError('');setFile(null);
+  setReceived(null);const f=e.target.files?.[0];uploaded.current=null;setNotice('');setError('');setFile(null);
   if(!f)return;
   if(!/\.xlsx?$/i.test(f.name)||!f.size||f.size>50*1024*1024){setError('Choose an XLS or XLSX workbook up to 50 MB.');return;}setFile(f);
  }}/></label>
  <button className="btn primary" disabled={!file||busy} onClick={submit}>{busy?'Uploading…':'Upload workbook'}</button>
- {notice&&<p role="status">{notice}</p>}{error&&<p role="alert">{error}</p>}
- {manager&&<><h3>Received workbooks</h3>{entries.length===0?<p>No submissions to display.</p>:<ul>{entries.map(e=><li key={e.id}><a href={api+'?id='+e.id}>{e.name}</a> · {new Date(e.created).toLocaleDateString('en-PG',{timeZone:'Pacific/Port_Moresby'})}</li>)}</ul>}
+ {notice&&<p role="status">{notice}</p>}{manager&&received&&<button className="btn" onClick={()=>onCompare(received)}>Map and compare this employee workbook</button>}{error&&<p role="alert">{error}</p>}
+ {manager&&<><h3>Received workbooks</h3><p>For earlier employee submissions, download the workbook and open employee import to map and compare its records. Position-only establishment files remain in the inbox.</p>{entries.length===0?<p>No submissions to display.</p>:<ul>{entries.map(e=><li key={e.id}><a href={api+'?id='+e.id}>{e.name}</a> · {new Date(e.created).toLocaleDateString('en-PG',{timeZone:'Pacific/Port_Moresby'})}</li>)}</ul>}
  {next&&<button className="btn" onClick={()=>list(next).catch(e=>setError(e.message))}>Load earlier submissions</button>}</>}
  </section>;
 }
