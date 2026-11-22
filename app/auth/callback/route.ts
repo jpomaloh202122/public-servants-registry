@@ -1,3 +1,4 @@
+import {resolveAccess} from '../../registry-access';
 import {cookies} from 'next/headers';
 import {decodeJwt} from 'jose';
 import {verifyRegistryToken} from '@/lib/identity';
@@ -10,7 +11,7 @@ export async function GET(req:Request){
  if(!base||!issuer||!client||!process.env.COGNITO_DOMAIN)return new Response('Sign-in is not configured.',{status:503});
  const response=await fetch(new URL('/oauth2/token',process.env.COGNITO_DOMAIN!),{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({grant_type:'authorization_code',client_id:client,code:u.searchParams.get('code')!,redirect_uri:base+'/auth/callback',code_verifier:flow.verifier})});
  if(!response.ok)return new Response('Sign-in failed. Start again.',{status:401});
- try{const tokens=await response.json();await verifyRegistryToken(tokens.id_token,{issuer,clientId:client,nonce:flow.nonce});const p=decodeJwt(tokens.id_token);
+ try{const tokens=await response.json();if(!await resolveAccess(await verifyRegistryToken(tokens.id_token,{issuer,clientId:client,nonce:flow.nonce,allowManaged:true})))throw Error('Registry access is not approved.');const p=decodeJwt(tokens.id_token);
  jar.set('__Host-registry-session',tokens.id_token,{httpOnly:true,secure:true,sameSite:'lax',path:'/',maxAge:Math.max(0,Math.min(3600,(p.exp||0)-Math.floor(Date.now()/1000)))});
  return Response.redirect(base+'/'); }catch(error){
   const reason=error instanceof Error?error.message:'';

@@ -22,7 +22,7 @@ export type IdCard = {
  needsReplacement?:boolean;
 };
 export type CardVerification = {
- status:'valid'|'expired'|'inactive'|'changed'|'revoked'|'superseded'|'unknown'|'preview'|'unavailable';
+ status:'valid'|'expired'|'suspended'|'inactive'|'changed'|'revoked'|'superseded'|'unknown'|'preview'|'unavailable';
  checkedAt:string;
  employeeNumber?:string;
  name?:string;

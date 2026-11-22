@@ -74,8 +74,10 @@ type StoredCard={id:string;state:string;verification_token:string;record_hash:st
 // Request explicit UTC text so expiry is independent of the Data API timestamp format.
 const storedColumns="*, to_char(issued_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.MS\"Z\"') AS issued_utc";
 async function currentIssued(number:string) {
- return env.DB.prepare("SELECT "+storedColumns+" FROM registry_id_cards WHERE employee_number=? AND state='issued'")
+ const card=await env.DB.prepare("SELECT "+storedColumns+" FROM registry_id_cards WHERE employee_number=? AND state IN ('issued','suspended')" )
   .bind(number).first<StoredCard>();
+ if(card?.state==='suspended')throw new CardProblem('This ID is suspended. Contact the system administrator.',409);
+ return card;
 }
 async function attachIssued(card:IdCard,stored:StoredCard) {
  const url=verificationUrl(stored.verification_token);
@@ -130,14 +132,14 @@ export async function verifyIdCard(token:string):Promise<CardVerification> {
  const stored=await env.DB.prepare("SELECT "+storedColumns+" FROM registry_id_cards WHERE token_hash=?")
   .bind(hash(token)).first<StoredCard&{employee_number:string}>();
  if(!stored)return {status:'unknown',checkedAt};
- if(stored.state==='revoked'||stored.state==='superseded')return {status:stored.state,checkedAt};
+ if(stored.state==='suspended'||stored.state==='revoked'||stored.state==='superseded')return {status:stored.state,checkedAt};
  if(pngToday()>=cardDates(stored.issued_utc).expiresOn)return {status:'expired',checkedAt};
  try {
   const context=await loadReadyCard(stored.employee_number);
   if(context.recordHash!==stored.record_hash||context.sequence!==stored.employee_sequence)
    return {status:'changed',checkedAt};
   const finalState=await env.DB.prepare('SELECT state FROM registry_id_cards WHERE id=?').bind(stored.id).first<{state:string}>();
-  if(!finalState||finalState.state!=='issued')return {status:finalState?.state==='superseded'?'superseded':finalState?.state==='revoked'?'revoked':'unknown',checkedAt};
+  if(!finalState||finalState.state!=='issued')return {status:finalState?.state==='suspended'?'suspended':finalState?.state==='superseded'?'superseded':finalState?.state==='revoked'?'revoked':'unknown',checkedAt};
   return {status:'valid',checkedAt,employeeNumber:context.card.employeeNumber,name:context.card.name,
    agency:context.card.agency,position:context.card.position,gender:context.card.gender};
  } catch(error) {

@@ -57,6 +57,14 @@ if (stack === 'ps-id-registry-staging') {
 const currentBranch=aws(['amplify','get-branch','--app-id',appId,'--branch-name',branch]).branch;
 const existing=currentBranch.environmentVariables||{};
 const config=Object.fromEntries(allowed.map(k=>[k,outputs[k]]));
+const productionRegistry=appId==='d2p2kldeb52a64'&&branch==='main'&&stack==='ps-id-registry-backend';
+const sub=process.env.REGISTRY_MAIN_ADMIN_SUB||existing.REGISTRY_MAIN_ADMIN_SUB||
+ (productionRegistry?'590ea478-4071-70e6-647c-d58bf6ce7135':undefined);
+if(sub){
+ const user=aws(['cognito-idp','admin-get-user','--user-pool-id',outputs.USER_POOL_ID,'--username',sub]);
+ if(!user.Enabled||!user.UserAttributes.some(a=>a.Name==='sub'&&a.Value===sub)||!user.UserAttributes.some(a=>a.Name==='email_verified'&&a.Value==='true'))throw Error('Select an enabled, email-verified administrator from the registry pool.');
+ config.REGISTRY_MAIN_ADMIN_SUB=sub;
+}
 aws(['amplify','update-app'],{appId,platform:'WEB_COMPUTE'});
 aws(['amplify','update-branch'],{appId,branchName:branch,computeRoleArn:outputs.COMPUTE_ROLE_ARN,environmentVariables:{...existing,...config}});
 const job=aws(['amplify','start-job','--app-id',appId,'--branch-name',branch,'--job-type','RELEASE']);

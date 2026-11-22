@@ -1,0 +1,7 @@
+.access-workspace{max-width:68rem;margin:0 auto;padding:2rem 1rem;color:#20252a}
+.access-workspace header,.access-workspace nav{display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap}
+.access-workspace section{background:white;border:1px solid #ddd;border-radius:12px;padding:1.3rem;margin:1rem 0;overflow:auto}
+.access-workspace label{display:grid;gap:.35rem;margin:.65rem 0;font-weight:600;max-width:34rem}
+.access-workspace input,.access-workspace select,.access-workspace button{font:inherit;padding:.55rem;border:1px solid #afafb3;background:white;border-radius:6px}
+.access-workspace button{cursor:pointer;margin:.2rem}.access-workspace button:disabled{opacity:.55}
+.access-workspace table{width:100%;border-collapse:collapse}.access-workspace td,.access-workspace th{padding:.5rem;text-align:left;border-bottom:1px solid #ddd}
