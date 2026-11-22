@@ -15,7 +15,7 @@ class Statement {
  bind(...args){return new Statement(this.sql,args);}
  expectChanges(count){this.expected=count;return this;}
  // Data API binds strings as PostgreSQL text, unlike a driver that leaves types unspecified.
- async result(){let n=0;return db.query(this.sql.replace(/\?/g,()=>{const value=this.args[n++];return typeof value==='string'?'CAST($'+n+' AS text)':'$'+n;}),this.args);}
+ async result(){let n=0;return db.query(this.sql.replaceAll("json_extract(payload,'$.role')","(payload::jsonb->>'role')").replaceAll("json_extract(payload,'$.code')","(payload::jsonb->>'code')").replace(/\?/g,()=>{const value=this.args[n++];return typeof value==='string'?'CAST($'+n+' AS text)':'$'+n;}),this.args);}
  async first(){return (await this.result()).rows[0]??null;}
  async all(){return {results:(await this.result()).rows};}
  async run(){const result=await this.result();if(this.expected!==undefined&&result.affectedRows!==this.expected)throw Error('Revision conflict');return result;}
@@ -27,16 +27,22 @@ const config=async()=>{const row=await new Statement("SELECT payload,revision FR
 globalThis.__cardFixture={context,env,config};
 process.env.APP_URL='https://registry.example';
 try {
- for(const [path,name] of [['app/model.ts','model'],['app/quality.ts','quality'],['app/quality-postgres.ts','quality-postgres'],['app/id-card.ts','id-card'],['app/id-card-pdf.ts','id-card-pdf'],['app/server-id-card.ts','server-id-card'],['app/server-issued-cards.ts','server-issued-cards'],['app/api/id-cards/route.ts','list-route'],['app/api/id-card/route.ts','route']]){
+ for(const [path,name] of [['app/registry-access.ts','registry-access'],['app/api/registry-admin/route.ts','admin-route'],['app/api/agency-hr/route.ts','hr-route'],['app/store-portrait.ts','store-portrait'],['app/model.ts','model'],['app/quality.ts','quality'],['app/quality-postgres.ts','quality-postgres'],['app/id-card.ts','id-card'],['app/id-card-pdf.ts','id-card-pdf'],['app/server-id-card.ts','server-id-card'],['app/server-issued-cards.ts','server-issued-cards'],['app/api/id-cards/route.ts','list-route'],['app/api/id-card/route.ts','route']]){
   let source=readFileSync(path,'utf8').replace(/from '\.\/([^']+)'/g,"from './$1.mjs'");
-  for(const name of ['server-id-card','server-issued-cards'])source=source.replaceAll("'../../"+name+"'","'./"+name+".mjs'");
-  source=source.replaceAll("'@/lib/aws-runtime'","'./runtime.mjs'").replaceAll("'../../chatgpt-auth'","'./runtime.mjs'").replaceAll("'./server-registry.mjs'","'./runtime.mjs'");
+  for(const name of ['server-id-card','server-issued-cards','registry-access','store-portrait','model'])source=source.replaceAll("'../../"+name+"'","'./"+name+".mjs'");
+  source=source.replaceAll("'@aws-sdk/client-cognito-identity-provider'","'./directory.mjs'").replaceAll("'../../server-registry'","'./runtime.mjs'").replaceAll("'@/lib/aws-runtime'","'./runtime.mjs'").replaceAll("'../../chatgpt-auth'","'./runtime.mjs'").replaceAll("'./server-registry.mjs'","'./runtime.mjs'");
   writeFileSync(join(dir,name+'.mjs'),ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText);
  }
- writeFileSync(join(dir,'runtime.mjs'),`export const {env,config}=globalThis.__cardFixture;export const CONFIG='excel-config';export const getChatGPTUser=async()=>globalThis.__cardFixture.context.user;`);
+ writeFileSync(join(dir,'directory.mjs'),`
+ const attrs=[{Name:'sub',Value:'new-user'}];class Command{constructor(input){this.input=input;}}
+ export class AdminCreateUserCommand extends Command{} export class AdminDeleteUserCommand extends Command{} export class AdminGetUserCommand extends Command{} export class AdminUpdateUserAttributesCommand extends Command{} export class ListUsersCommand extends Command{}
+ export class CognitoIdentityProviderClient{async send(cmd){if(cmd instanceof AdminCreateUserCommand)return {User:{Attributes:attrs}};if(cmd instanceof AdminGetUserCommand)return {UserAttributes:attrs,Username:'new-user'};return {};}}
+ `);
+ writeFileSync(join(dir,'runtime.mjs'),`export const {env,config}=globalThis.__cardFixture;export const CONFIG='excel-config';export const getRegistrySession=async()=>globalThis.__cardFixture.context.user;export const getChatGPTUser=async()=>globalThis.__cardFixture.context.user?.access==='hr'?null:globalThis.__cardFixture.context.user;`);
  await db.exec(readFileSync('infra/postgres/001-schema.sql','utf8'));
  await db.exec(readFileSync('infra/postgres/003-payroll-lifecycle.sql','utf8'));
  await db.exec(readFileSync('infra/postgres/004-issued-cards.sql','utf8'));
+ await db.exec(readFileSync('infra/postgres/005-id-administration.sql','utf8'));
  const employee={id:'employee',number:'000123',first:'Sample',last:'Officer',gender:'Female',dob:'1990-01-01',position:'Registry Officer',agency:'agency',status:'Not provided',photo:'portraits/12345678-1234-1234-1234-123456789abc/000123.png',verified:true};
  await db.query('INSERT INTO organisations VALUES($1,$2,$3,$4)',['cycle:agency','cycle','agency',JSON.stringify({id:'agency',code:'001',name:'Example Department'})]);
  await db.query('INSERT INTO employees VALUES($1,$2,$3,$4,$5,$6,$7,$8)',['cycle:000123','cycle','000123','agency',employee.status,'sample officer',0,JSON.stringify(employee)]);
@@ -84,6 +90,42 @@ try {
  let verification=await verifyIdCard(token);assert.equal(verification.status,'valid');assert.equal(verification.employeeNumber,'000123');
  assert.deepEqual(Object.keys(verification).sort(),['status','checkedAt','employeeNumber','name','agency','position','gender'].sort());
  assert.equal((await verifyIdCard('000123')).status,'unknown');assert.equal((await verifyIdCard('preview')).status,'preview');
+ const admin=await import(pathToFileURL(join(dir,'admin-route.mjs')));
+ const hr=await import(pathToFileURL(join(dir,'hr-route.mjs')));
+ const access=await import(pathToFileURL(join(dir,'registry-access.mjs')));
+ const base={userId:'hr-user',displayName:'HR',registryMember:true};
+ await db.query("INSERT INTO registry VALUES('hr-user:hr-user',1,$1)",[JSON.stringify({role:'hr-officer',agency:'001'})]);
+ context.user=await access.resolveAccess(base);assert.equal(context.user.access,'hr');
+ const hrRequest=new Request('https://registry.example/api/agency-hr?agency=other');
+ assert.deepEqual((await (await hr.GET(hrRequest)).json()).employees.map(e=>e.number),['000123']);
+ assert.equal((await GET(request('000123'))).status,401);
+ assert.equal((await admin.GET(hrRequest)).status,403);
+ const submit=async(number)=>{const form=new FormData();form.set('position','New position');form.set('employeeNumber',number);form.set('dataset','cycle');form.set('revision',String((await config()).revision));return hr.POST(new Request(hrRequest,{method:'POST',body:form,headers:{origin:process.env.APP_URL}}));};
+ await db.query("INSERT INTO employees SELECT 'other:009',dataset,'009','other',status,search,ready,payload FROM employees LIMIT 1");
+ assert.equal((await submit('009')).status,404);
+ assert.equal((await hr.GET(new Request('https://registry.example/api/agency-hr?portrait=009'))).status,404);
+ context.user.role={mode:'view'};assert.equal((await submit('000123')).status,403);
+ context.user.role={mode:'correct'};assert.equal((await submit('000123')).status,200);
+ assert.equal(JSON.parse((await db.query("SELECT payload FROM employees WHERE number='000123'")).rows[0].payload).verified,false);
+ await setEmployee({});
+ context.user={userId:'admin',access:'admin'};
+ const manage=async(action,body)=>admin.POST(new Request('https://registry.example/api/registry-admin',{method:'POST',headers:{origin:process.env.APP_URL},body:JSON.stringify({action,...body})}));
+ assert.equal((await manage('create-role',{name:'Payroll HR reader',mode:'view'})).status,200);
+ const custom=(await access.roles()).find(r=>r.name==='Payroll HR reader');
+ const account={name:'Agency reader',email:'example@example.org',agency:'001',role:custom.id};
+ assert.equal((await manage('create-user',account)).status,200);
+ assert.equal((await access.resolveAccess({...base,userId:'new-user'})).role.mode,'view');
+ assert.equal((await manage('update-role',{id:custom.id,name:'Payroll HR correction',mode:'correct'})).status,200);
+ assert.equal((await access.resolveAccess({...base,userId:'new-user'})).role.mode,'correct');
+ assert.equal((await manage('delete-role',{id:custom.id})).status,409);
+ assert.equal((await manage('update-user',{...account,id:'new-user',role:'hr-manager'})).status,200);
+ assert.equal((await manage('delete-role',{id:custom.id})).status,200);
+ assert.equal((await manage('delete-user',{id:'new-user'})).status,200);
+ assert.equal(await access.resolveAccess({...base,userId:'new-user'}),null);
+ const action=async(action,state,id=issued.cardId)=>admin.POST(new Request('https://registry.example/api/registry-admin',{method:'POST',headers:{origin:process.env.APP_URL},body:JSON.stringify({action,state,id,reason:'test reason'})}));
+ assert.equal((await action('suspend','issued')).status,200);
+ assert.equal((await verifyIdCard(token)).status,'suspended');assert.equal((await issue(card)).status,409);
+ assert.equal((await action('resume','suspended')).status,200);assert.equal((await verifyIdCard(token)).status,'changed');
  await setEmployee({status:'Inactive'});verification=await verifyIdCard(token);assert.equal(verification.status,'inactive');assert.equal('name' in verification,false);
  await setEmployee({});assert.equal((await verifyIdCard(token)).status,'changed','Returning to payroll must not reactivate old ID');
  card=await (await GET(request('000123'))).json();assert.equal(card.needsReplacement,true);
@@ -113,6 +155,11 @@ try {
  const renewed=await (await issue(pending)).json();
  assert.notEqual(renewed.cardId,current.cardId);
  assert.equal((await verifyIdCard(currentToken)).status,'superseded');
+ assert.equal((await action('revoke','issued',renewed.cardId)).status,200);
+ const renewedToken=renewed.verificationUrl.split('/').pop();
+ assert.equal((await verifyIdCard(renewedToken)).status,'revoked');
+ assert.equal((await action('delete-card','revoked',renewed.cardId)).status,200);
+ assert.equal((await verifyIdCard(renewedToken)).status,'unknown');
  await db.exec('DROP TABLE registry_id_cards');
  assert.equal((await (await listCards(listRequest())).json()).installed,false,'Missing setup has a clear empty state');
  console.log('ID card checks passed: readiness diagnostics, exact identifiers, approval, atomic rollback, idempotent issuance, QR decoding, authenticated issued-ID totals/search/pagination, public field limits, lifecycle invalidation, replacement/revocation and template PDF.');

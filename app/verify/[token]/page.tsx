@@ -9,6 +9,7 @@ const descriptions:Record<CardVerification['status'],[string,string]>={
  expired:['ID expired','The three-year validity period has ended. Ask the holder to present a renewed Public Servant ID.'],
  inactive:['ID inactive','This ID currently fails the registry validation checks. Contact the Government of PNG Public Servants Registry System.'],
  changed:['Replacement ID required','The employee record has changed since issuance. Contact the Government of PNG Public Servants Registry System for review and reissue.'],
+ suspended:['ID suspended','Verification is suspended. Contact the registry administrator.'],
  revoked:['ID revoked','This ID has been revoked. Contact the Government of PNG Public Servants Registry System.'],
  superseded:['ID replaced','A newer ID has replaced this card. Ask the holder to present their current card.'],
  unknown:['ID not recognised','The registry could not find an issued ID for this code.'],

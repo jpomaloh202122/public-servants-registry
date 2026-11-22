@@ -165,6 +165,9 @@ Resources:
             Version: '2012-10-17'
             Statement:
               - Effect: Allow
+                Action: [cognito-idp:AdminCreateUser, cognito-idp:AdminGetUser, cognito-idp:AdminUpdateUserAttributes, cognito-idp:AdminDeleteUser, cognito-idp:ListUsers]
+                Resource: !GetAtt Pool.Arn
+              - Effect: Allow
                 Action: [s3:GetObject, s3:GetObjectVersion, s3:PutObject]
                 Resource: [!Sub '${Archives.Arn}/portraits/*', !Sub '${Archives.Arn}/uploads/*', !Sub '${Archives.Arn}/sources/*']
               - Effect: Allow
