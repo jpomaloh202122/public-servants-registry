@@ -14,7 +14,14 @@ let id=await start();const employee={id:'e1',number:'0001',first:'Jane',last:'Sm
 assert.equal((await POST(req('batch',{id,employees:[employee]}))).status,200);assert.equal((await POST(req('batch',{id,employees:[employee]}))).status,200);assert.equal((db.prepare('SELECT COUNT(*) n FROM employees WHERE dataset=?').get(id) as any).n,1);
 assert.equal((await POST(req('activate',{id,confirm:true}))).status,400);assert.equal(JSON.parse((db.prepare('SELECT payload FROM registry WHERE id=?').get('excel-config') as any).payload).dataset,'old');
 const upload=await PUT(new Request('http://test/api/imports?id='+id,{method:'PUT',headers:{'X-File-Size':'15'},body:'original source'}));assert.equal(upload.status,200);
-assert.equal((await POST(req('activate',{id,confirm:false}))).status,400);assert.equal((await POST(req('activate',{id,confirm:true}))).status,200);
+assert.equal((await POST(req('activate',{id,confirm:false}))).status,400);
+assert.equal((await POST(req('activate',{id,confirm:true}))).status,409);
+db.prepare('INSERT INTO employees VALUES(?,?,?,?,?,?,?,?)').run('old:0001','old','0001','old-org','Active','jane',0,JSON.stringify({...employee,dob:'1989-12-31',agency:'old-org'}));
+db.prepare('INSERT INTO organisations VALUES(?,?,?,?)').run('old:old-org','old','old-org',JSON.stringify({...org,id:'old-org'}));
+const delta=await (await POST(req('compare',{id}))).json() as any;
+assert.equal(delta.totals.changed,1);
+assert.deepEqual(delta.changes[0].fields,[{label:'Date of birth',current:'1989-12-31',incoming:'1990-01-01'}]);
+assert.equal((await POST(req('activate',{id,confirm:true,comparisonToken:delta.token,reviewedChanges:true}))).status,200);
 const e=JSON.parse((db.prepare('SELECT payload FROM employees WHERE dataset=?').get(id) as any).payload);assert.equal(e.photo,'');assert.equal(e.verified,false);
 assert.equal(JSON.parse((db.prepare('SELECT payload FROM registry WHERE id=?').get('excel-config') as any).payload).dataset,id);
 assert.equal((await POST(req('activate',{id,confirm:true}))).status,200);const old=id;id=await start(2);await PUT(new Request('http://test/api/imports?id='+id,{method:'PUT',headers:{'X-File-Size':'6'},body:'source'}));await POST(req('batch',{id,employees:[employee]}));assert.equal((await POST(req('activate',{id,confirm:true}))).status,409);
