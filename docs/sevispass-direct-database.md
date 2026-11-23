@@ -1,17 +1,14 @@
 # SevisPass direct database access
 
-The dedicated login is sevispass_reader. The sevispass.employees view exposes every stored employee payload field, organisation details, payroll source metadata, effective employment status and the current dataset revision. It follows the active dataset automatically. It includes unverified and inactive employees for review. The consumer must apply the registry rules and issuance approval before creating credentials.
-
-The employee column is JSONB and preserves fields without a lossy fixed-column mapping. Example lookup with a bound string parameter:
+The dedicated login `sevispass_reader` can look up employees in the current dataset through `sevispass.employees`. A matching row can include an inactive or unverified employee. Use the separate eligibility workflow for credential decisions.
 
 ```sql
-SELECT employee_number, employee, organisation,
-       effective_employment_status, dataset_revision
+SELECT employee_number, first_name, last_name, gender, date_of_birth, position, department_name
 FROM sevispass.employees
 WHERE employee_number = $1;
 ```
 
-Keep leading zeros in Employee Number. The stored ready column is deliberately omitted because it can become stale as age changes. A photo field contains an S3 object reference. Database access alone does not retrieve the image bytes. Agree separate scoped S3 read access for portraits if required.
+All seven columns are text. Bind the employee number as a string to preserve leading zeros. Date of birth carries the recorded value, with an empty or missing value returned as NULL. The department name comes from the organisation matched within the same dataset. Consumers of the earlier JSON projection need to switch to the named columns when this update is applied.
 
 ## Provision from authorised AWS CloudShell
 
@@ -34,6 +31,6 @@ Configure the PostgreSQL client with sslmode=verify-full and the current AWS RDS
 
 ## Handover validation
 
-From the SevisPass network, verify a TLS connection as sevispass_reader, exact Employee Number lookup, full payload fields and active dataset switching with synthetic records. Confirm SELECT on public.employees is denied and UPDATE/DELETE/INSERT on the view fail. Run permission probes in rolled-back transactions or a synthetic staging database. Confirm CREATE TABLE in public and role escalation are denied. Save the result without employee data or credentials.
+From the SevisPass network, verify a TLS connection as sevispass_reader, exact Employee Number lookup, the seven named fields and active dataset switching with synthetic records. Confirm SELECT on public.employees is denied and UPDATE/DELETE/INSERT on the view fail. Run permission probes in rolled-back transactions or a synthetic staging database. Confirm CREATE TABLE in public and role escalation are denied. Save the result without employee data or credentials.
 
 To revoke access, an administrator can ALTER ROLE sevispass_reader NOLOGIN and terminate its existing sessions, then remove the dedicated network rule. Record who owns secret rotation and periodic access review.
