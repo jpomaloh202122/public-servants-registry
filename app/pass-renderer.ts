@@ -8,12 +8,21 @@ function loadImage(src:string):Promise<HTMLImageElement> {
  return image.decode().then(()=>image);
 }
 
+async function loadIssuedSignature(card:IdCard) {
+ if(card.status!=='issued'||!card.cardId)return null;
+ const query=new URLSearchParams({employeeNumber:card.employeeNumber,id:card.cardId});
+ const response=await fetch('/api/id-card/secretary-approval?'+query,{cache:'no-store'});
+ if(response.status===204)return null;
+ if(!response.ok)throw Error('The Secretary approval block could not be loaded. Refresh and try again.');
+ return createImageBitmap(await response.blob());
+}
+
 // Coordinates follow the two approved artwork masters in their native pixels.
 export async function renderPass(card:IdCard,format:PassFormat):Promise<HTMLCanvasElement> {
  const physical=format==='physical';
- const [art,photo,qr,approval]=await Promise.all([
+ const [art,photo,qr,approval,signature]=await Promise.all([
   loadImage('/pass-art/'+format+'.webp'),loadImage(card.photoUrl),loadImage(card.qrDataUrl),
-  loadImage('/pass-art/secretary-approval.svg')
+  loadImage('/pass-art/secretary-approval.svg'),loadIssuedSignature(card)
  ]);
  const canvas=document.createElement('canvas');
  canvas.width=art.naturalWidth;canvas.height=art.naturalHeight;
@@ -66,14 +75,22 @@ export async function renderPass(card:IdCard,format:PassFormat):Promise<HTMLCanv
   fitted(label,x,y,width,18,physical?16:14,true);
   fitted(value,x,y+18,width,25,physical?21:18);
  };
+ const drawApproval=(x:number,y:number,w:number,h:number)=>{
+  ctx.drawImage(approval,x,y,w,h);
+  if(!signature)return;
+  const scale=Math.min(w*.79/signature.width,h*.49/signature.height);
+  const width=signature.width*scale,height=signature.height*scale;
+  ctx.drawImage(signature,x+(w-width)/2,y+h*.29-height/2,width,height);
+  signature.close();
+ };
  if(physical){
   validityField('Date of issuance',issued,335,588,218);
   validityField('Expiry date',expiry,568,588,240);
-  ctx.drawImage(approval,810,580,230,58);
+  drawApproval(810,580,230,58);
  }else{
   validityField('Date of issuance',issued,50,649,184);
   validityField('Expiry date',expiry,50,695,184);
-  ctx.drawImage(approval,50,744,192,49);
+  drawApproval(50,744,192,49);
  }
  return canvas;
 }

@@ -17,5 +17,5 @@ export function PassDesign({card,wallet}:{card:IdCard;wallet:boolean}) {
  if(result.error)return <p role="alert">{result.error}</p>;
  const title=wallet?'SevisWallet Public Servant Digital ID':'Public Servant ID';
  return <img className={wallet?styles.digital:styles.physical} src={result.image}
-  alt={title+'. '+card.status+'. '+card.name+'. Department: '+card.agency+'. Position: '+card.position+'. Gender: '+card.gender+'. Employee Number: '+card.employeeNumber+'. Date of issuance: '+(card.issuedOn??'On issuance')+'. Expiry date: '+(card.expiresOn??'3 years from issue')+'. Approved by Secretary DPM. Signature placeholder.'}/>;
+  alt={title+'. '+card.status+'. '+card.name+'. Department: '+card.agency+'. Position: '+card.position+'. Gender: '+card.gender+'. Employee Number: '+card.employeeNumber+'. Date of issuance: '+(card.issuedOn??'On issuance')+'. Expiry date: '+(card.expiresOn??'3 years from issue')+'. Approved by Secretary DPM.'}/>;
 }
