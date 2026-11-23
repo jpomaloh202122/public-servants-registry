@@ -24,16 +24,16 @@ CREATE SCHEMA IF NOT EXISTS sevispass;
 -- statement
 REVOKE ALL ON SCHEMA sevispass FROM PUBLIC, sevispass_reader;
 -- statement
-CREATE OR REPLACE VIEW sevispass.employees WITH (security_barrier=true) AS
-SELECT e.number AS employee_number, e.dataset AS dataset_id, r.revision AS dataset_revision,
-       e.payload::jsonb AS employee,
-       o.payload::jsonb AS organisation,
-       r.payload::jsonb->'source' AS payroll_source,
-       CASE WHEN r.payload::jsonb->'source' IS NOT NULL
-                 AND r.payload::jsonb->'source' <> 'null'::jsonb
-                 AND e.status='Not provided'
-                 AND NOT COALESCE((e.payload::jsonb->>'statusReviewed')::boolean,false)
-            THEN 'Active' ELSE e.status END AS effective_employment_status
+DROP VIEW IF EXISTS sevispass.employees;
+-- statement
+CREATE VIEW sevispass.employees WITH (security_barrier=true) AS
+SELECT e.number AS employee_number,
+       e.payload::jsonb->>'first' AS first_name,
+       e.payload::jsonb->>'last' AS last_name,
+       e.payload::jsonb->>'gender' AS gender,
+       NULLIF(e.payload::jsonb->>'dob', '') AS date_of_birth,
+       e.payload::jsonb->>'position' AS position,
+       o.payload::jsonb->>'name' AS department_name
 FROM public.employees e
 JOIN public.registry r ON r.id='excel-config' AND e.dataset=r.payload::jsonb->>'dataset'
 LEFT JOIN public.organisations o ON o.dataset=e.dataset AND o.key=e.agency;
